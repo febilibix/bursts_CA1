@@ -1,4 +1,5 @@
 import numpy as np
+from tqdm import tqdm
 
 
 def runge_kutta(t_values, y_values, f, dt):
@@ -29,10 +30,7 @@ class PyramidalCells():
             input_apical,
             params_inter,
             n_cells,
-            W_pi = None,     
-            W_ip_a = None,  
-            W_ip_b = None,     
-            W_pp = None
+            weights = None,
             ): 
         
         self.pb, self.pa, self.pi = params_basal, params_apical, params_inter
@@ -57,14 +55,16 @@ class PyramidalCells():
         # self.W_ip_b = 200*sparsify_matrix(np.random.rand(n_cells['inter'],n_cells['pyramidal']))
         # self.W_pp = 200*sparsify_matrix(np.random.rand(n_cells['inter'],n_cells['inter']))
 
-        if W_pi is not None:
-            self.W_pi = W_pi
-        if W_ip_a is not None:
-            self.W_ip_a = W_ip_a
-        if W_ip_b is not None:
-            self.W_ip_b = W_ip_b
-        if W_pp is not None:
-            self.W_pp = W_pp
+
+        ## TODO: Once this is working, just put them all in a dict
+
+        if weights is not None:
+            self.W_pi_a = weights['pi_a']
+            self.W_pi_b = weights['pi_b']
+            self.W_ip_a = weights['ip_a']
+            self.W_ip_b = weights['ip_b']
+            self.W_pp_a = weights['pp_a']
+            self.W_pp_b = weights['pp_b']
 
         ## Normalize matrices to have the same sum of weights for each cell
         ## TODO: make this section look nicer
@@ -98,27 +98,25 @@ class PyramidalCells():
         self.I_ip_a, self.I_pi_a, self.I_ip_b, self.I_pi_b = 0, 0, 0, 0
 
         self.events, self.bursts = [np.zeros(n_cells['pyramidal'])], [np.zeros(n_cells['pyramidal'])]
-        self.inter_spikes_a, self.inter_spikes_b = np.zeros(n_cells['inter']), np.zeros(n_cells['inter'])
+        self.inter_spikes_a, self.inter_spikes_b = np.zeros(n_cells['inter_a']), np.zeros(n_cells['inter_b'])
 
         
     def dynamics_basal(self, t, v):
         R_b, E_L_b, tau_b = self.pb['R'], self.pb['E_L'], self.pb['tau']
-        v_dot = 1/tau_b * (E_L_b - v + R_b * (self.I_b(t) - self.W_pi@self.inter_spikes_b))
+        v_dot = 1/tau_b * (E_L_b - v + R_b * (self.I_b(t) - self.W_pi_b@self.inter_spikes_b))
 
         return v_dot
 
   
     def dynamics_apical(self, t, v):
         R_a, E_L_a, tau_a = self.pa['R'], self.pa['E_L'], self.pa['tau']
-        v_dot = 1/tau_a * (E_L_a - v + R_a * (self.I_a(t) - self.W_pi@self.inter_spikes_a))
+        v_dot = 1/tau_a * (E_L_a - v + R_a * (self.I_a(t) - self.W_pi_a@self.inter_spikes_a))
 
         return v_dot
     
 
     def dynamics_interneuron_a(self, t, v):
-        R_i, E_L_i, tau_i = self.pi['R'], self.pi['E_L'], self.pi['tau']
-
-
+        R_i, E_L_i = self.pi['R'], self.pi['E_L']
 
         v_dot = 1/self.tau_i * (E_L_i - v + R_i * self.W_ip_a @ self.spiking)
 
@@ -132,7 +130,7 @@ class PyramidalCells():
         return v_dot
     
     ## TODO : Two things that could be improved: 
-    ## 1. Make it possible to have differing amounts of the two types of interneurons (i.e., need W_pi_a and W_pi_b i guess)
+    ## 1. done
     ## 2. Have them both in the same function (then i guess i would only need one W_pi and W_ip)
 
 
@@ -149,10 +147,10 @@ class PyramidalCells():
         t_values = [t0]
 
         dynamics_values = {
-            'v_b'   : (self.dynamics_basal,         [v0['basal']]                ),
-            'v_a'   : (self.dynamics_apical,        [v0['apical']]               ),
-            'v_i_a' : (self.dynamics_interneuron_a, [v0['inter']]                ),     # TODO : Possibly use different initial values for apical and basal interneurons
-            'v_i_b' : (self.dynamics_interneuron_b, [v0['inter']]                ),
+            'v_b'   : (self.dynamics_basal,         [v0['basal']]  ),
+            'v_a'   : (self.dynamics_apical,        [v0['apical']] ),
+            'v_i_a' : (self.dynamics_interneuron_a, [v0['inter_a']]),     # TODO : Possibly use different initial values for apical and basal interneurons
+            'v_i_b' : (self.dynamics_interneuron_b, [v0['inter_b']]),
             }
         
         values = {k: v[1] for k, v in dynamics_values.items()}

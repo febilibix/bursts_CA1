@@ -45,11 +45,14 @@ def plot_single_neuron(t_values, v_values, params_inter, bursts, events):
 def run_single_neuron(I_b, I_a):
     
 
-    n_cells = {'pyramidal' : 1, 'inter' : 1}
+    n_cells = {'pyramidal' : 1, 'inter_a' : 1, 'inter_b' : 1}
 
     params_basal = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
     params_apical = {"E_L": -65, "R": 10, "v_th": -50, "tau": 5}
     params_inter = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
+
+    weights = {'pi_a': 1000*np.ones(1), 'pi_b': 1000*np.ones(1), 'ip_a': 1000*np.ones(1), 
+               'ip_b': 10000*np.ones(1), 'pp_a': np.zeros(1), 'pp_b' : np.zeros(1)}
 
     pyramidal = PyramidalCells(
                         params_basal,
@@ -58,16 +61,14 @@ def run_single_neuron(I_b, I_a):
                         I_a,
                         params_inter,
                         n_cells,
-                        W_pi = 1000*np.ones(1),
-                        W_ip_a = 15000000*np.ones(1),    
-                        W_ip_b = 0*np.ones(1),
-                        W_pp = np.zeros(1)
+                        weights=weights
                     )
     
     v0 = {
         "basal": np.ones(1)*params_basal['E_L'],
         "apical": np.ones(1)*params_apical['E_L'],
-        "inter": np.ones(1)*params_inter['E_L']
+        "inter_a": np.ones(1)*params_inter['E_L'],
+        "inter_b": np.ones(1)*params_inter['E_L']
         }
     
     t0 = 0
@@ -84,7 +85,10 @@ def run_simulation_constant_inputs(basal_input, apical_input, params_basal, para
     I_b = lambda t: np.array([basal_input])
     I_a = lambda t: np.array([apical_input])
 
-    n_cells = {'pyramidal' : 1, 'inter' : 1}
+    n_cells = {'pyramidal' : 1, 'inter_a' : 1, 'inter_b' : 1}
+
+    weights = {'pi_a': 1000*np.zeros(1), 'pi_b': 1000*np.zeros(1), 'ip_a': 1000*np.zeros(1), 
+               'ip_b': 1000*np.zeros(1), 'pp_a': np.zeros(1), 'pp_b' : np.zeros(1)}
 
     pyramidal = PyramidalCells(       
                         params_basal,
@@ -93,20 +97,18 @@ def run_simulation_constant_inputs(basal_input, apical_input, params_basal, para
                         I_a,
                         params_inter,
                         n_cells,
-                        W_pi = np.ones(1),
-                        W_ip_a = np.ones(1),    
-                        W_ip_b = np.ones(1),
-                        W_pp = np.zeros(1)
+                        weights=weights
                     )
 
     v0 = {
         "basal": np.ones(1)*params_basal['E_L'],
         "apical": np.ones(1)*params_apical['E_L'],
-        "inter": np.ones(1)*params_inter['E_L']
+        "inter_a": np.ones(1)*params_inter['E_L'],
+        "inter_b": np.ones(1)*params_inter['E_L']
         }
 
     t0 = 0
-    tn = 50
+    tn = 20
     dt = 0.01
 
     t_values, v_values, I_values, events, bursts, _, _ = pyramidal.run_simulation(v0, t0, tn, dt)
@@ -166,7 +168,7 @@ def main():
 
     basal_inputs = np.linspace(0, 50, 50)
     apical_inputs = np.linspace(0, 50, 50)
-    # test_basal_apical_inputs(basal_inputs, apical_inputs)
+    test_basal_apical_inputs(basal_inputs, apical_inputs)
 
 
 if __name__ == "__main__":
