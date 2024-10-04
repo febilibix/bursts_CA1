@@ -31,8 +31,12 @@ class PyramidalCells():
             params_inter,
             n_cells,
             weights = None,
+            plasticity = False
             ): 
-        
+
+        self.plasticity = plasticity
+        self.eta = 0.0005 # learning rate, TODO: make this a parameter
+
         self.pb, self.pa, self.pi = params_basal, params_apical, params_inter
         
         self.v_reset_b = params_basal['E_L']
@@ -49,15 +53,6 @@ class PyramidalCells():
 
         self.tau_i = 20
             
-        ## TODO: No idea how this should be initialized
-        # self.W_pi = 200*sparsify_matrix(np.random.rand(n_cells['pyramidal'],n_cells['inter']))
-        # self.W_ip_a = 200*sparsify_matrix(np.random.rand(n_cells['inter'],n_cells['pyramidal']))
-        # self.W_ip_b = 200*sparsify_matrix(np.random.rand(n_cells['inter'],n_cells['pyramidal']))
-        # self.W_pp = 200*sparsify_matrix(np.random.rand(n_cells['inter'],n_cells['inter']))
-
-
-        ## TODO: Once this is working, just put them all in a dict
-
         if weights is not None:
             self.W_pi_a = weights['pi_a']
             self.W_pi_b = weights['pi_b']
@@ -66,36 +61,14 @@ class PyramidalCells():
             self.W_pp_a = weights['pp_a']
             self.W_pp_b = weights['pp_b']
 
-        ## Normalize matrices to have the same sum of weights for each cell
-        ## TODO: make this section look nicer
-        ## TODO: When implementing plasticity, this should be done after each update
-
-        # if self.W_pi.ndim == 1:
-        #     self.W_pi = np.expand_dims(self.W_pi, axis=0)
-        # if self.W_ip_a.ndim == 1:
-        #     self.W_ip_a = np.expand_dims(self.W_ip_a, axis=0)
-        # if self.W_ip_b.ndim == 1:
-        #     self.W_ip_b = np.expand_dims(self.W_ip_b, axis=0)
-        # 
-        # if np.all(np.sum(self.W_pi, axis=1, keepdims=True) == 0):
-        #     self.W_pi = np.zeros_like(self.W_pi)
-        # else:
-        #     self.W_pi = self.W_pi / np.sum(self.W_pi, axis=1, keepdims=True) * 1000
-        # 
-        # if np.all(np.sum(self.W_ip_a, axis=1, keepdims=True) == 0):
-        #     self.W_ip_a = np.zeros_like(self.W_ip_a)
-        # else:
-        #     self.W_ip_a = self.W_ip_a / np.sum(self.W_ip_a, axis=1, keepdims=True) * 1000
-        # 
-        # if np.all(np.sum(self.W_ip_b, axis=1, keepdims=True) == 0):
-        #     self.W_ip_b = np.zeros_like(self.W_ip_b)
-        # else:
-        #     self.W_ip_b = self.W_ip_b / np.sum(self.W_ip_b, axis=1, keepdims=True) * 1000
-
-        #### 
-
-
-        self.I_ip_a, self.I_pi_a, self.I_ip_b, self.I_pi_b = 0, 0, 0, 0
+        if 'CA3' in n_cells and n_cells['CA3'] is not None and plasticity:
+            self.W_CA3 = np.random.rand(n_cells['pyramidal'], n_cells['CA3'])
+            self.W_CA3 = self.W_CA3 / np.sum(self.W_CA3)
+        elif 'CA3' in n_cells and n_cells['CA3'] is not None:
+            print('here')
+            self.W_CA3 = weights['CA3']
+        else:
+            self.W_CA3 = np.eye(n_cells['pyramidal'])
 
         self.events, self.bursts = [np.zeros(n_cells['pyramidal'])], [np.zeros(n_cells['pyramidal'])]
         self.inter_spikes_a, self.inter_spikes_b = np.zeros(n_cells['inter_a']), np.zeros(n_cells['inter_b'])
@@ -103,7 +76,7 @@ class PyramidalCells():
         
     def dynamics_basal(self, t, v):
         R_b, E_L_b, tau_b = self.pb['R'], self.pb['E_L'], self.pb['tau']
-        v_dot = 1/tau_b * (E_L_b - v + R_b * (self.I_b(t) - self.W_pi_b@self.inter_spikes_b))
+        v_dot = 1/tau_b * (E_L_b - v + R_b * (self.W_CA3@self.I_b(t) - self.W_pi_b@self.inter_spikes_b))
 
         return v_dot
 
@@ -154,6 +127,8 @@ class PyramidalCells():
             }
         
         values = {k: v[1] for k, v in dynamics_values.items()}
+
+        Ib_trace = []
         
         while t_values[-1] < tn:
 
@@ -181,10 +156,32 @@ class PyramidalCells():
             burst_count.append(self.bursting)
             spike_count.append(self.spiking)
             self.events.append(spike_count[-1])
+            self.bursts.append(burst_count[-1])
             [events[l[0]].append(t_new) for l in np.argwhere(self.spiking)]
             [bursts[l[0]].append(t_new) for l in np.argwhere(self.bursting)]
 
+            Ib_trace.append(self.I_b(t_new))
+
             t_values.append(t_new)
+
+            ##### plasticity   #####
+            if self.plasticity == False:
+                continue
+
+            if ~np.isclose(np.round(t_new/dt) % 100, 0):
+                continue
+
+            last_bursts = np.array(self.bursts)[-100:, :]
+            mean_bursts = np.mean(last_bursts, axis=0)
+
+            Ib_arr = np.array(Ib_trace)[-100:, :]
+            mean_Ib = np.mean(Ib_arr, axis=0)
+
+            delta_W = self.eta * np.outer(mean_bursts, mean_Ib) 
+            
+            self.W_CA3 += delta_W
+            self.W_CA3 = self.W_CA3 / np.sum(self.W_CA3)
+
         
         v_values = values['v_b'], values['v_a'], values['v_i_a'], values['v_i_b']
 
