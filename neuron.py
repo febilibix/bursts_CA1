@@ -124,6 +124,9 @@ class PyramidalCells():
 
     def run_simulation(self, v0, t0, tn, dt, event_plot = True, n_patterns = 2, n_presentations = 10, selected_neurons = None):
 
+        if selected_neurons is None:
+            selected_neurons = np.ones((n_patterns, self.n_cells['pyramidal']))
+            
         self.bursting = np.zeros(len(v0['basal']))
         self.spiking = np.zeros(len(v0['basal']))
         spike_count = np.zeros((int(round(tn / dt)), len(v0['basal'])))
@@ -140,7 +143,7 @@ class PyramidalCells():
         
         values = {k: v[1] for k, v in dynamics_values.items()}
 
-        Ib_trace = []
+        self.Ib_trace = []
 
         plast_step = int(tn/(2*n_patterns*n_presentations))
         next_plast_update = plast_step
@@ -176,7 +179,7 @@ class PyramidalCells():
             burst_count[t-1, :] = self.bursting
             spike_count[t-1, :] = self.spiking
 
-            Ib_trace.append(self.I_b(t_new))
+            self.Ib_trace.append(self.I_b(t_new))
             t_values.append(t_new)
 
             ##### plasticity   #####
@@ -187,7 +190,7 @@ class PyramidalCells():
                 continue
             next_plast_update += plast_step
             # print('Plasticity', t_new, plast_step/dt )
-            self._plasticity(t, plast_step, spike_count, burst_count, Ib_trace, dt, selected_neurons)
+            self._plasticity(t, plast_step, spike_count, burst_count, dt, selected_neurons)
 
         # if self.plasticity:
 # 
@@ -218,7 +221,7 @@ class PyramidalCells():
         return events, bursts
     
 
-    def _plasticity(self, t, plast_step, spike_count, burst_count, Ib_trace, dt, selected_neurons):
+    def _plasticity(self, t, plast_step, spike_count, burst_count, dt, selected_neurons):
 
         last_events = spike_count[int(t-(plast_step/dt)):t, :].copy()
         firing_rate = np.sum(last_events, axis = 0)/ plast_step
@@ -231,17 +234,16 @@ class PyramidalCells():
         pattern_index = (self.pattern_count+1) % (2 * self.n_patterns)
         if pattern_index < self.n_patterns:
             # print(1- cosine(firing_rate, selected_neurons[pattern_index]))
-            self.cosine_distances[int(self.pattern_count // (2 *  self.n_patterns)), pattern_index] = 1 - cosine(firing_rate, selected_neurons[pattern_index])
+            self.cosine_distances[int(self.pattern_count // (2*self.n_patterns)), pattern_index] = 1 - cosine(firing_rate, selected_neurons[pattern_index])
 
-        Ib_arr = np.array(Ib_trace)
+        Ib_arr = np.array(self.Ib_trace)
         mean_Ib = np.mean(Ib_arr, axis=0)
 
-        Ib_trace = []
-
+        self.Ib_trace = []
         self.plast_count += 1
         
         delta_W = self.eta * (np.outer(mean_bursts - 0.1*mean_events, mean_Ib)) # 
-        # print('Plasticity', self.plast_count, np.sum(delta_W))
+        print('Plasticity', self.plast_count, np.sum(delta_W))
         self.W_CA3 += delta_W    
         if np.sum(self.W_CA3) != 0:       
             self.W_CA3 = self.W_CA3 / (np.sum(self.W_CA3, axis=1, keepdims=True)*self.n_cells['pyramidal'])

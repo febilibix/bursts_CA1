@@ -268,7 +268,7 @@ def main():
     delta_t = 10
     eta = .001
 
-    N_patterns = np.arange(1, 21, 2)
+    N_patterns = [200]
     print(N_patterns)
     N_iter = 10
     n_presentations = 10
@@ -277,12 +277,14 @@ def main():
 
 
     for i in range(N_iter):
+        print(i)
         for j, n_patterns in enumerate(N_patterns):
             tn = n_presentations * n_patterns * 100
             cos_dist = run_simulation(
                 n_CA3=n_CA3, n_pyr=n_pyr, n_int_a=n_int_a, n_int_b=n_int_b, tn=tn, delta_t=delta_t,
                 n_patterns=n_patterns, lr = eta, n_presentations= n_presentations, event_plot=False)
             
+            print(cos_dist[-1, :])
             print(np.mean(cos_dist[-1, :]))
 
             mean_cos[i, j] = np.mean(cos_dist[-1, :])
@@ -316,6 +318,7 @@ def test_cosine(n_CA3, n_pyr, n_int_a, n_int_b, tn, delta_t, n_patterns, n_prese
         cos.append(cos_dist[-1, :])
 
     print(np.array(cos).mean(axis = 0), np.array(cos).std(axis = 0))
+    quit()
 
     cos = []
     for _ in range(1000):
