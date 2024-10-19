@@ -27,140 +27,177 @@ class PyramidalCells():
 
     def __init__(
             self, 
-            params_basal,
-            input_basal,
-            params_apical,
-            input_apical,
-            params_inter,
             n_cells,
             weights = None,
-            plasticity = False,
             learning_rate = 0.05
             ): 
         
-        params_basal  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
-        params_apical = {"E_L": -65, "R": 10, "v_th": -50, "tau": 5 }
-        params_inter  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
-
-        self.plasticity = plasticity
-        self.eta = learning_rate # learning rate, TODO: make this a parameter
-
-        self.pb, self.pa, self.pi = params_basal, params_apical, params_inter
+        self.t_values = [0.]
         
-        self.v_reset_b = params_basal['E_L']
-        self.v_th_b = params_basal['v_th']
+        self.pb  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
+        self.pa = {"E_L": -65, "R": 10, "v_th": -50, "tau": 5 }
+        self.pi  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 20}
 
-        self.v_reset_a = params_apical['E_L']
-        self.v_th_a = params_apical['v_th']
+        self.eta = learning_rate 
+        
+        self.v_reset_b, self.v_th_b = self.pb['E_L'], self.pb['v_th']
+        self.v_reset_a, self.v_th_a = self.pa['E_L'], self.pa['v_th']
+        self.v_reset_i, self.v_th_i = self.pi['E_L'], self.pi['v_th']
+        self.tau_i = self.pi['tau']
 
-        self.v_reset_i = params_inter['E_L']
-        self.v_th_i = params_inter['v_th']
+        n_int_a, n_int_b, n_pyr = n_cells['inter_a'], n_cells['inter_b'], n_cells['pyramidal']
 
-        self.I_b = input_basal
-        self.I_a = input_apical
-
-        self.tau_i = 20
-            
-        if weights is not None:
-            self.W_pi_a = weights['pi_a']
-            self.W_pi_b = weights['pi_b']
-            self.W_ip_a = weights['ip_a']
-            self.W_ip_b = weights['ip_b']
-            self.W_pp_a = weights['pp_a']
-            self.W_pp_b = weights['pp_b']
-
+        self.W_ip_a = 2000*np.ones((n_int_a, n_pyr))/np.sqrt(n_pyr)
+        self.W_ip_b = 1000*np.ones((n_int_b, n_pyr))/np.sqrt(n_pyr)
+        self.W_pi_a = 1000*np.ones((n_pyr, n_int_a))/np.sqrt(n_pyr)
+        self.W_pi_b = 1000*np.ones((n_pyr, n_int_b))/np.sqrt(n_pyr)
+        self.W_pp_a = np.zeros((n_int_a, n_int_a))
+        self.W_pp_b = np.zeros((n_int_b, n_int_b))
+        
+        # initialize weights
         if 'CA3' in n_cells and ('CA3' not in weights or weights['CA3'] is None):
-            self.W_CA3 = np.random.rand(n_cells['pyramidal'], n_cells['CA3'])
-            # self.W_CA3 = self.W_CA3 / np.sum(self.W_CA3)
-             
+            self.W_CA3 = np.random.rand(n_cells['pyramidal'], n_cells['CA3'])             
             self.W_CA3 = self.W_CA3 / np.sum(self.W_CA3)
-
         elif 'CA3' in n_cells:
             self.W_CA3 = weights['CA3']
-
         else:
             self.W_CA3 = np.eye(n_cells['pyramidal'])
 
-        # self.events, self.bursts = [np.zeros(n_cells['pyramidal'])], [np.zeros(n_cells['pyramidal'])]
         self.inter_spikes_a, self.inter_spikes_b = np.zeros(n_cells['inter_a']), np.zeros(n_cells['inter_b'])
-
         self.n_cells = n_cells
-        self.pattern_count = 0 
         self.plast_count = 0
-        
 
+        self.dynamics_values = {
+            'v_b'   : (self.dynamics_basal,         [self.pb['E_L']]),
+            'v_a'   : (self.dynamics_apical,        [self.pa['E_L']]),
+            'v_i_a' : (self.dynamics_interneuron_a, [self.pi['E_L']]),  
+            'v_i_b' : (self.dynamics_interneuron_b, [self.pi['E_L']]),
+            }
+        
+        self.v0 = np.array([self.pb['E_L'], self.pa['E_L'], self.pi['E_L'], self.pi['E_L']])
+        
         
     def dynamics_basal(self, t, v):
         R_b, E_L_b, tau_b = self.pb['R'], self.pb['E_L'], self.pb['tau']
         v_dot = 1/tau_b * (E_L_b - v + R_b * (self.W_CA3@self.I_b(t) - self.W_pi_b@self.inter_spikes_b))
-
         return v_dot
 
   
     def dynamics_apical(self, t, v):
         R_a, E_L_a, tau_a = self.pa['R'], self.pa['E_L'], self.pa['tau']
         v_dot = 1/tau_a * (E_L_a - v + R_a * (self.I_a(t) - self.W_pi_a@self.inter_spikes_a))
-
         return v_dot
     
 
     def dynamics_interneuron_a(self, t, v):
-        R_i, E_L_i = self.pi['R'], self.pi['E_L']
-
-        v_dot = 1/self.tau_i * (E_L_i - v + R_i * self.W_ip_a @ self.spiking)
-
+        R_i, E_L_i, tau_i = self.pi['R'], self.pi['E_L'], self.pi['tau']
+        v_dot = 1/tau_i * (E_L_i - v + R_i * self.W_ip_a @ self.spiking)
         return v_dot
     
 
     def dynamics_interneuron_b(self, t, v):
         R_i, E_L_i, tau_i = self.pi['R'], self.pi['E_L'], self.pi['tau']
-        v_dot = 1/self.tau_i * (E_L_i - v + R_i * self.W_ip_b @ self.spiking)
-
+        v_dot = 1/tau_i * (E_L_i - v + R_i * self.W_ip_b @ self.spiking)
         return v_dot
     
-    ## TODO : Two things that could be improved: 
-    ## 2. Have them both in the same function (then i guess i would only need one W_pi and W_ip)
+    
+    def create_I_CA3(self, pattern, tn, dt, t0_epoch):
+    
+        m_b = 8*self.n_cells['pyramidal']
+        sigma = 2*6.5/1000
+        I = np.zeros((int(tn/dt + 10), self.n_cells['CA3'])) # +10 to avoid index out of bounds
+
+        for i in range(int(tn/dt + 10)):
+            I[i, :] = m_b*pattern + np.random.normal(0, sigma, self.n_cells['CA3']) # sqrt(sigma) i had before
+
+        self.I_b = lambda t: I[int((t-t0_epoch)/dt), :] 
 
 
-    def run_simulation(self, v0, t0, tn, dt, event_plot = True, n_patterns = 2, n_presentations = 10, selected_neurons = None):
+    def create_I_EC(self, pattern, tn, dt, t0_epoch):
+    
+        m_a = 6.5
+        sigma = 2*6.5/1000
+        I = np.zeros((int(tn/dt + 10), self.n_cells['pyramidal']))
 
-        if selected_neurons is None:
-            selected_neurons = np.ones((n_patterns, self.n_cells['pyramidal']))
-            
-        self.bursting = np.zeros(len(v0['basal']))
-        self.spiking = np.zeros(len(v0['basal']))
-        spike_count = np.zeros((int(round(tn / dt)), len(v0['basal'])))
-        burst_count = np.zeros((int(round(tn / dt)), len(v0['basal'])))
+        for i in range(int(tn/dt + 10)):
+            I[i, :] = m_a*pattern + np.random.normal(0, sigma, self.n_cells['pyramidal']) 
 
-        t_values = [t0]
+        self.I_a = lambda t: I[int((t-t0_epoch)/dt), :] 
+    
 
-        dynamics_values = {
-            'v_b'   : (self.dynamics_basal,         [v0['basal']]  ),
-            'v_a'   : (self.dynamics_apical,        [v0['apical']] ),
-            'v_i_a' : (self.dynamics_interneuron_a, [v0['inter_a']]),     # TODO : Possibly use different initial values for apical and basal interneurons
-            'v_i_b' : (self.dynamics_interneuron_b, [v0['inter_b']]),
-            }
+    def learn_patterns(self, patterns, top_down, n_presentations, t_per_pattern, dt=.01):
         
-        values = {k: v[1] for k, v in dynamics_values.items()}
+        n_patterns = patterns.shape[1]
+        tn = n_presentations * n_patterns * t_per_pattern
+
+        self.spike_count = np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))
+        self.burst_count = np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))
+
+        n_epochs = n_patterns * n_presentations
+        
+        for i in range(n_presentations):
+            for j in range(n_patterns):
+                t_epoch = self.t_values[-1] + tn//n_epochs
+                t0_epoch = self.t_values[-1]
+                self.create_I_CA3(patterns[:,j], t_per_pattern, dt, t0_epoch)
+                self.create_I_EC(top_down[:,j], t_per_pattern, dt, t0_epoch)
+                self.run_one_epoch(t_epoch, dt)
+            
+
+    def learn_place_cells(self, t_run, x_run, t_per_epoch, dt):
+
+        m_a, m_b = 2*6.5, 8*self.n_cells['pyramidal']*2
+
+        tn = t_run[-1]
+        len_track = np.max(x_run)
+        n_epochs = int(tn//t_per_epoch)
+
+        self.spike_count = np.zeros((int(round(tn / dt +10)), self.n_cells['pyramidal']))
+        self.burst_count = np.zeros((int(round(tn / dt +10)), self.n_cells['pyramidal']))
+
+        self.I_b, self.m_CA3, self.CA3_act = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['CA3'], m_b)
+        self.I_a, self.m_EC, _ = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['pyramidal'], m_a)
+        
+        for j in range(n_epochs):
+            t_epoch = self.t_values[-1] + t_per_epoch
+            print('Epoch', t_epoch)
+            self.run_one_epoch(t_epoch, dt)
+
+
+    def create_activity_pc(self, x, len_track, dt, tn, n_cells, m):
+        sigma_pf = len_track/8
+        m_cells = np.arange(0, len_track, len_track/n_cells) 
+        np.random.shuffle(m_cells)
+
+        activity = np.zeros((n_cells, int(tn/dt + 10)))
+        for i in range(int(tn/dt)):
+            activity[:, i] = np.exp(-0.5 * ((m_cells - x[i])**2) / sigma_pf**2)
+
+        active_cells = np.random.choice([0, 1], size=(n_cells,), p=[0, 1]) # TODO: CHANGE THIS TO A PROBABILITY
+        activity = m * activity * active_cells[:, np.newaxis]
+
+        return lambda t: activity[:, int((t)/dt)], m_cells, activity
+    
+
+    def run_one_epoch(self, t_epoch, dt):
+            
+        self.bursting = np.zeros(self.n_cells['pyramidal'])
+        self.spiking = np.zeros(self.n_cells['pyramidal'])
+
+        values = {k: v[1] for k, v in self.dynamics_values.items()}
 
         self.Ib_trace = []
+        values_new = {}
+        t0 = self.t_values[-1]
 
-        plast_step = int(tn/(2*n_patterns*n_presentations))
-        next_plast_update = plast_step
-        t_new = 0
-        self.cosine_distances = np.zeros((n_presentations, n_patterns))
-        self.n_patterns = n_patterns
-        
-        while round(t_values[-1]) < tn:
+        while round(self.t_values[-1]) < t_epoch:
             
-            t_old = t_new
-            values_new = {}
-
-            for value_name, (dynamics, value) in dynamics_values.items():
+            for value_name, (dynamics, value) in self.dynamics_values.items():
                 value_new, t_new = runge_kutta(
-                    t_values, value, dynamics, dt)
+                    self.t_values, value, dynamics, dt)
                 values_new[value_name] = np.array(value_new)
 
+            # print(values_new['v_b'])
             self.spiking = (values_new['v_b'] > self.v_th_b).astype(int)
             self.bursting = ((values_new['v_a'] > self.v_th_a) & self.spiking).astype(int)
             
@@ -176,74 +213,52 @@ class PyramidalCells():
             [values[i].append(values_new[i]) for i in ['v_a', 'v_b', 'v_i_a', 'v_i_b']]
 
             t = int(round(t_new/dt))
-            burst_count[t-1, :] = self.bursting
-            spike_count[t-1, :] = self.spiking
+            self.burst_count[t-1, :] = self.bursting
+            self.spike_count[t-1, :] = self.spiking
 
             self.Ib_trace.append(self.I_b(t_new))
-            t_values.append(t_new)
+            self.t_values.append(t_new)
 
-            ##### plasticity   #####
-            if self.plasticity == False:
-                continue
-
-            if not (t_old < next_plast_update and t_new > next_plast_update):
-                continue
-            next_plast_update += plast_step
-            # print('Plasticity', t_new, plast_step/dt )
-            self._plasticity(t, plast_step, spike_count, burst_count, dt, selected_neurons)
-
-        # if self.plasticity:
-# 
-        #     self._plasticity(t, plast_step, spike_count, burst_count, Ib_trace, dt, selected_neurons)
- 
-        v_values = values['v_b'], values['v_a'], values['v_i_a'], values['v_i_b']
-
-        # TODO : get rid of third return value
-        if event_plot:
-            events, bursts = self._get_events_bursts(spike_count, burst_count, tn, dt)
-        else:
-            events, bursts = None, None
-
-        return t_values, v_values, v_values, spike_count, burst_count, events, bursts
+        t_epoch = self.t_values[-1]
+        self.plasticity_step(t0, t_epoch, dt)
+        self.values = values_new
     
 
-    def _get_events_bursts(self, spike_count, burst_count, tn, dt):
+    def pattern_retrieval(self, patterns, top_down, t_per_pattern, dt=.01):
+        self.cosine_distances = []
         
-        events = [[] for _ in range(self.n_cells['pyramidal'])] 
-        bursts = [[] for _ in range(self.n_cells['pyramidal'])]
+        n_patterns = patterns.shape[1]
+        tn = n_patterns * t_per_pattern
 
-        for i in range(spike_count.shape[0]):
+        self.spike_count = np.concatenate([self.spike_count, np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))])
+        self.burst_count = np.concatenate([self.burst_count, np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))])
 
-            t_new = i * dt
-            [events[l[0]].append(t_new) for l in np.argwhere(spike_count[i, :])]
-            [bursts[l[0]].append(t_new) for l in np.argwhere(burst_count[i, :])]
-
-        return events, bursts
+        n_epochs = n_patterns 
+        zero_top_down = np.zeros((int(tn/dt + 10), self.n_cells['pyramidal']))
+        
+        for j in range(n_patterns):
+            t_epoch = self.t_values[-1] + tn//n_epochs
+            t0_epoch = self.t_values[-1]
+            self.create_I_CA3(patterns[:,j], t_per_pattern, dt, t0_epoch)
+            self.I_a = lambda t: zero_top_down[int((t-t0_epoch)/dt), :]
+            self.run_one_epoch(t_epoch, dt)
+            firing_rate = self.spike_count[int(t0_epoch/dt):int(t_epoch/dt), :].mean(axis=0) 
+            cosine_distance = 1-cosine(firing_rate, top_down[:,j])
+            self.cosine_distances.append(cosine_distance)
     
 
-    def _plasticity(self, t, plast_step, spike_count, burst_count, dt, selected_neurons):
-
-        last_events = spike_count[int(t-(plast_step/dt)):t, :].copy()
-        firing_rate = np.sum(last_events, axis = 0)/ plast_step
+    def plasticity_step(self, t0, tn, dt):
+        
+        last_events = self.spike_count[int(t0/dt):int(tn/dt), :]
         mean_events = np.mean(last_events, axis=0)
-        last_bursts = burst_count[int(t-(plast_step/dt)):t, :].copy()
+        last_bursts = self.burst_count[int(t0/dt):int(tn/dt), :]
         mean_bursts = np.mean(last_bursts, axis=0)
-
-        self.pattern_count += 1
-
-        pattern_index = (self.pattern_count+1) % (2 * self.n_patterns)
-        if pattern_index < self.n_patterns:
-            # print(1- cosine(firing_rate, selected_neurons[pattern_index]))
-            self.cosine_distances[int(self.pattern_count // (2*self.n_patterns)), pattern_index] = 1 - cosine(firing_rate, selected_neurons[pattern_index])
-
+ 
         Ib_arr = np.array(self.Ib_trace)
         mean_Ib = np.mean(Ib_arr, axis=0)
-
-        self.Ib_trace = []
-        self.plast_count += 1
         
-        delta_W = self.eta * (np.outer(mean_bursts - 0.1*mean_events, mean_Ib)) # 
-        print('Plasticity', self.plast_count, np.sum(delta_W))
+        delta_W = self.eta * (np.outer(mean_bursts - 0.1*mean_events, mean_Ib))
+        
         self.W_CA3 += delta_W    
         if np.sum(self.W_CA3) != 0:       
             self.W_CA3 = self.W_CA3 / (np.sum(self.W_CA3, axis=1, keepdims=True)*self.n_cells['pyramidal'])
@@ -252,15 +267,7 @@ class PyramidalCells():
             print('Weights are zero')
             print(delta_W, self.W_CA3)
             quit()
+        print('Plasticity', self.plast_count, np.sum(delta_W))
 
-        
-    def _get_active_neurons(self, event_count, n_patterns, dt, tn):
-    
-        active_neurons = np.zeros((n_patterns, event_count.shape[1]))
-        time_step = tn/n_patterns/dt
-        
-        for i in range(n_patterns):
-            activity = np.sum(event_count[int((i+1)*time_step - time_step/2): int((i+1)*time_step), :], axis = 0) / time_step
-            active_neurons[i, :] = activity 
-
-        return active_neurons
+        self.Ib_trace = []
+        self.plast_count += 1

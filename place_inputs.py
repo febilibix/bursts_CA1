@@ -9,16 +9,17 @@ def simulate_run(len_track = 200, n_runs = 20, av_running_speed = 20, dt = 0.01,
 
     fps = 1/dt
 
+    n_runs = 1000
     print(n_runs)
 
-    running_speed_a = np.random.chisquare(av_running_speed, size=n_runs) # running speed in the two directions
-    running_speed_b = np.random.chisquare(av_running_speed, size=n_runs) 
-    # running_speed_a = running_speed_b = np.ones(n_runs) * av_running_speed
+    # running_speed_a = np.random.chisquare(av_running_speed, size=n_runs) # running speed in the two directions
+    # running_speed_b = np.random.chisquare(av_running_speed, size=n_runs) 
+    running_speed_a = running_speed_b = np.ones(n_runs) * av_running_speed
 
-    stopping_time_a = np.random.chisquare(3, size=n_runs) # the time the mouse will spend at the two ends of the track
-    stopping_time_b = np.random.chisquare(3, size=n_runs)
-    # stopping_time_a = stopping_time_b = np.ones(n_runs) * 0
-
+    # stopping_time_a = np.random.chisquare(3, size=n_runs) # the time the mouse will spend at the two ends of the track
+    # stopping_time_b = np.random.chisquare(3, size=n_runs)
+    
+    stopping_time_a = stopping_time_b = np.ones(n_runs) * 0
     x = np.array([])
     i = 0
     while True:
@@ -80,6 +81,24 @@ def plot_track_CA3(t, x, activity):
 
 def run_simulation(len_track, av_running_speed, tn, n_cells, lr, n_plast_steps = 100):
 
+    # Setting the simulation time parameters 
+    dt = 0.01
+    max_runs = int(tn/20)
+    t_epoch = 50
+    tn = 4000
+
+    pyramidal = PyramidalCells(n_cells, weights = dict(), learning_rate = lr)
+    
+    t_run, x_run = simulate_run(len_track, max_runs, av_running_speed, dt, tn)
+    
+    pyramidal.learn_place_cells(t_run, x_run, t_epoch, dt)
+    plot_weights(pyramidal.W_CA3, pyramidal.m_CA3, pyramidal.m_EC)
+    
+    plot_track_CA3(t_run, x_run, pyramidal.CA3_act)
+
+    quit()
+    pyramidal.pattern_retrieval(patterns, top_down, t_per_pattern=t_per_pattern, dt=dt)
+
     params_basal  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
     params_apical = {"E_L": -65, "R": 10, "v_th": -50, "tau": 5 }
     params_inter  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
@@ -92,11 +111,12 @@ def run_simulation(len_track, av_running_speed, tn, n_cells, lr, n_plast_steps =
     t0 = 0
     tn = tn
     dt = 0.01
+    
 
-    max_runs = int(tn/20)
+    
     print(max_runs)
 
-    t, x = simulate_run(len_track, max_runs, av_running_speed, dt, tn)
+   
 
     CA3_act, m_CA3 = simulate_activity(t, x, len_track = len_track, n_cells = n_CA3, tn = tn, dt = dt, m = m_b)
     I_CA3 = lambda t: CA3_act[:, int(t/dt)]
@@ -168,15 +188,19 @@ def main():
     
 
     len_track = 100. # 100
-    tn = 20000
-    av_running_speed = 20 # 0.2
-    lr = .0015 # 0.001
-    n_plast_steps = 100 # 100
+    tn = 1000
+    av_running_speed = .2 # 0.2
+    lr = .001 # 0.001
+    n_plast_steps = 1000 # 100
 
     n_cells = {'pyramidal' : 50, 'inter_a' : 5, 'inter_b' : 5, 'CA3' : 30}
 
     run_simulation(len_track, av_running_speed, tn, n_cells, lr, n_plast_steps)
 
+    # TODO: plot activity of CA1 neurons over space 
+    # repeat that for unseeen enviornment, by reshuffling CA3 spatial centres and no top down input
+    # Some measure of similarity between the two environments
+    # Do the same in CA3, and we want similarity in CA1 to be higher than in CA3, do it column wise and row wise 
 
     # print(t.shape, x.shape)
     # 
