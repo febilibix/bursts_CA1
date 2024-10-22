@@ -29,8 +29,11 @@ class PyramidalCells():
             self, 
             n_cells,
             weights = None,
-            learning_rate = 0.05
+            learning_rate = 0.05,
+            dt = 0.01
             ): 
+        
+        self.dt = dt
         
         self.t_values = [0.]
         
@@ -102,6 +105,7 @@ class PyramidalCells():
     
     
     def create_I_CA3(self, pattern, tn, dt, t0_epoch):
+        dt = self.dt
     
         m_b = 8*self.n_cells['pyramidal']
         sigma = 2*6.5/1000
@@ -114,6 +118,7 @@ class PyramidalCells():
 
 
     def create_I_EC(self, pattern, tn, dt, t0_epoch):
+        dt = self.dt
     
         m_a = 6.5
         sigma = 2*6.5/1000
@@ -126,6 +131,7 @@ class PyramidalCells():
     
 
     def learn_patterns(self, patterns, top_down, n_presentations, t_per_pattern, dt=.01):
+        dt = self.dt
         
         n_patterns = patterns.shape[1]
         tn = n_presentations * n_patterns * t_per_pattern
@@ -145,15 +151,17 @@ class PyramidalCells():
             
 
     def learn_place_cells(self, t_run, x_run, t_per_epoch, dt):
+        # TODO: delete the dt as local variable
+        dt = self.dt
 
         m_a, m_b = 2*6.5, 8*self.n_cells['pyramidal']*2
 
         tn = t_run[-1]
         len_track = np.max(x_run)
-        n_epochs = int(tn//t_per_epoch)
+        n_epochs = int(round(tn/t_per_epoch))
 
-        self.spike_count = np.zeros((int(round(tn / dt +10)), self.n_cells['pyramidal']))
-        self.burst_count = np.zeros((int(round(tn / dt +10)), self.n_cells['pyramidal']))
+        self.spike_count = np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))
+        self.burst_count = np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))
 
         self.I_b, self.m_CA3, self.CA3_act = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['CA3'], m_b)
         self.I_a, self.m_EC, _ = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['pyramidal'], m_a)
@@ -164,22 +172,26 @@ class PyramidalCells():
             self.run_one_epoch(t_epoch, dt)
 
 
-    def create_activity_pc(self, x, len_track, dt, tn, n_cells, m):
+    def create_activity_pc(self, x, len_track, dt, tn, n_cells, m, m_cells = None): # TODO: delete the dt as local variable
+        t0 = self.t_values[-1]
+        dt = self.dt
         sigma_pf = len_track/8
-        m_cells = np.arange(0, len_track, len_track/n_cells) 
-        np.random.shuffle(m_cells)
+        if m_cells is None:
+            m_cells = np.arange(0, len_track, len_track/n_cells) 
+            np.random.shuffle(m_cells)
 
-        activity = np.zeros((n_cells, int(tn/dt + 10)))
-        for i in range(int(tn/dt)):
+        activity = np.zeros((n_cells, int(round(tn/dt)+10)))
+        for i in range(int(tn//dt)):
             activity[:, i] = np.exp(-0.5 * ((m_cells - x[i])**2) / sigma_pf**2)
 
         active_cells = np.random.choice([0, 1], size=(n_cells,), p=[0, 1]) # TODO: CHANGE THIS TO A PROBABILITY
         activity = m * activity * active_cells[:, np.newaxis]
 
-        return lambda t: activity[:, int((t)/dt)], m_cells, activity
+        return lambda t: activity[:, int((t-t0)/dt)], m_cells, activity
     
 
-    def run_one_epoch(self, t_epoch, dt):
+    def run_one_epoch(self, t_epoch, dt): # TODO: delete the dt as local variable
+        dt = self.dt
             
         self.bursting = np.zeros(self.n_cells['pyramidal'])
         self.spiking = np.zeros(self.n_cells['pyramidal'])
@@ -213,6 +225,7 @@ class PyramidalCells():
             [values[i].append(values_new[i]) for i in ['v_a', 'v_b', 'v_i_a', 'v_i_b']]
 
             t = int(round(t_new/dt))
+            # print(t, self.spiking)
             self.burst_count[t-1, :] = self.bursting
             self.spike_count[t-1, :] = self.spiking
 
@@ -224,7 +237,8 @@ class PyramidalCells():
         self.values = values_new
     
 
-    def pattern_retrieval(self, patterns, top_down, t_per_pattern, dt=.01):
+    def pattern_retrieval(self, patterns, top_down, t_per_pattern, dt=.01): # TODO: delete the dt as local variable
+        dt = self.dt
         self.cosine_distances = []
         
         n_patterns = patterns.shape[1]
@@ -234,7 +248,7 @@ class PyramidalCells():
         self.burst_count = np.concatenate([self.burst_count, np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))])
 
         n_epochs = n_patterns 
-        zero_top_down = np.zeros((int(tn/dt + 10), self.n_cells['pyramidal']))
+        zero_top_down = np.zeros((int(tn//dt), self.n_cells['pyramidal']))
         
         for j in range(n_patterns):
             t_epoch = self.t_values[-1] + tn//n_epochs
@@ -247,7 +261,37 @@ class PyramidalCells():
             self.cosine_distances.append(cosine_distance)
     
 
-    def plasticity_step(self, t0, tn, dt):
+    def retrieve_place_cells(self, t_run, x_run, dt, new_env = False):
+        # TODO: DOES THIS FUNCTION MAKE MUCH SENSE? MAYBE INSTEAD I SHOULD MAKE IT POSSIBLE TO RUN IN DIFFERENT ENVIRONMENT
+        dt = self.dt
+        t0_retrieval = self.t_values[-1]
+
+        m_a, m_b = 2*6.5, 8*self.n_cells['pyramidal']*2
+
+        tn = t_run[-1]
+        len_track = np.max(x_run)
+
+        self.spike_count = np.concatenate([self.spike_count, np.zeros((int(round((tn) / dt)), self.n_cells['pyramidal']))])
+        self.burst_count = np.concatenate([self.burst_count, np.zeros((int(round((tn) / dt)), self.n_cells['pyramidal']))])
+
+        if new_env:
+            self.I_b, self.m_CA3, self.CA3_act = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['CA3'], m_b)
+        else:
+            self.I_b, self.m_CA3, self.CA3_act = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['CA3'], m_b, self.m_CA3)
+
+        zero_top_down = np.zeros((int(round(tn/dt)+10), self.n_cells['pyramidal']))
+        
+        self.I_a = lambda t: zero_top_down[int((t-t0_retrieval)/dt), :]
+        
+        self.run_one_epoch(tn + t0_retrieval, dt)
+
+        print(self.spike_count.shape)
+
+        return self.spike_count[int((t0_retrieval//dt)):, :]
+
+
+    def plasticity_step(self, t0, tn, dt): # TODO: delete the dt as local variable
+        dt = self.dt
         
         last_events = self.spike_count[int(t0/dt):int(tn/dt), :]
         mean_events = np.mean(last_events, axis=0)

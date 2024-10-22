@@ -1,7 +1,7 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 from neuron import PyramidalCells
-from test_plasticity import plot_results
+from scipy.stats import pearsonr
 
 
 def simulate_run(len_track = 200, n_runs = 20, av_running_speed = 20, dt = 0.01, tn = 1000):
@@ -10,7 +10,6 @@ def simulate_run(len_track = 200, n_runs = 20, av_running_speed = 20, dt = 0.01,
     fps = 1/dt
 
     n_runs = 1000
-    print(n_runs)
 
     # running_speed_a = np.random.chisquare(av_running_speed, size=n_runs) # running speed in the two directions
     # running_speed_b = np.random.chisquare(av_running_speed, size=n_runs) 
@@ -33,7 +32,6 @@ def simulate_run(len_track = 200, n_runs = 20, av_running_speed = 20, dt = 0.01,
         if len(x) >= tn*fps:
             break
         i += 1
-        print(tn)
 
     x = x[:int(tn*fps)]
     t = np.arange(len(x))/fps
@@ -96,82 +94,75 @@ def run_simulation(len_track, av_running_speed, tn, n_cells, lr, n_plast_steps =
     
     plot_track_CA3(t_run, x_run, pyramidal.CA3_act)
 
-    quit()
-    pyramidal.pattern_retrieval(patterns, top_down, t_per_pattern=t_per_pattern, dt=dt)
+    tn_retrieval = 1000
+    max_runs_rt = int(tn_retrieval/20)
 
-    params_basal  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
-    params_apical = {"E_L": -65, "R": 10, "v_th": -50, "tau": 5 }
-    params_inter  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
-
-    n_pyr, n_CA3, n_int_a, n_int_b = n_cells['pyramidal'], n_cells['CA3'], n_cells['inter_a'], n_cells['inter_b']
-
-    m_a, m_b = 2*6.5, 8*n_pyr*2
-
-    # Setting the simulation time parameters 
-    t0 = 0
-    tn = tn
-    dt = 0.01
+    t_run2, x_run2 = simulate_run(len_track, max_runs_rt, av_running_speed, dt, tn_retrieval)
     
+    event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=False)
+    fr_old = get_firing_rates(pyramidal, event_count, delta_t = 10)
 
-    
-    print(max_runs)
+    plot_firing_rates(fr_old, pyramidal.m_EC, out = 'old_env')
 
+    event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=True)
+    fr_new = get_firing_rates(pyramidal, event_count, delta_t = 10)
+
+    plot_firing_rates(fr_new, pyramidal.m_EC, out = 'new_env')
+
+    r_row, r_col = correlate_firing_rates(fr_old, fr_new)
+    print(r_row, r_col)
+
+
+def correlate_firing_rates(fr_old, fr_new):
+    cor_row = np.zeros((fr_old.shape[0]))
+    for i in range(fr_old.shape[0]):
+        cor_row[i] = pearsonr(fr_old[i, :], fr_new[i, :])[0]
+        
+    cor_col = np.zeros((fr_old.shape[1]))
+    for i in range(fr_old.shape[1]):
+        cor_col[i] = pearsonr(fr_old[:, i], fr_new[:, i])[0]
+ 
+    return np.mean(cor_row), np.mean(cor_col)
+
+
+def plot_firing_rates(firing_rates, m_EC, out):
+
+    sort_TD = np.argsort(m_EC)
+    sorted_fr = firing_rates[np.ix_(sort_TD, np.arange(firing_rates.shape[1]))]
+
+    ###### FOR NOW SINCE RETRIEVAL IS ONLY ONE WAY FORWARD AND ONE WAY BACK, I CAN JUST SPLIT IN MIDDLE AND MEAN. 
+    ###### IDEALLY I WOULD SOMEHOW PUT IT IN BINS ACCORDING TO POSITION AND THEN MEAN OVER THAT
+
+    half = sorted_fr.shape[1] // 2
+    mean_firing_rates = (sorted_fr[:, :half] + sorted_fr[:, :-half-1:-1]) / 2
+
+    fig, ax = plt.subplots(figsize = (10,8), dpi = 200)
+    extent = [0, 100, 0, mean_firing_rates.shape[0]]
+    im = ax.imshow(mean_firing_rates, aspect='auto', extent=extent, origin='lower')
+    fig.colorbar(im, ax=ax)
+    ax.set_title("Firing rates of CA1 neurons")
+    ax.set_xlabel("Position (cm)")
+    ax.set_ylabel("Neuron")
+    plt.savefig(f'plots/firing_rates_{out}.png')
+    plt.close()
+
+
+
+def get_firing_rates(pyramidal, event_count, delta_t = 10):
+    # event_count = pyramidal.spike_count
    
-
-    CA3_act, m_CA3 = simulate_activity(t, x, len_track = len_track, n_cells = n_CA3, tn = tn, dt = dt, m = m_b)
-    I_CA3 = lambda t: CA3_act[:, int(t/dt)]
-    EC_inp, m_EC = simulate_activity(t, x, len_track = len_track, n_cells = n_pyr, tn = tn, dt = dt, m = m_a)
-    I_EC = lambda t: EC_inp[:, int(t/dt)]
-
-    plot_track_CA3(t, x, CA3_act)
-
-    # TODO: I want to hardcode all these parameters into the neuron class:
-    W_ip_a = 2000*np.ones((n_int_a, n_pyr))/np.sqrt(n_pyr)
-    W_ip_b = 1000*np.ones((n_int_b, n_pyr))/np.sqrt(n_pyr)
-    W_pi_a = 1000*np.ones((n_pyr, n_int_a))/np.sqrt(n_pyr)
-    W_pi_b = 1000*np.ones((n_pyr, n_int_b))/np.sqrt(n_pyr)
-
-    weights = {'pi_a' : W_pi_a, 'pi_b' : W_pi_b, 'ip_a' : W_ip_a, 'ip_b' : W_ip_b, 
-               'pp_a' : np.zeros((n_int_a, n_int_a)), 'pp_b' : np.zeros((n_int_b, n_int_b)),
-               'CA3' : None}
+    step_size = int(delta_t // pyramidal.dt)
+    firing_rates = np.zeros((event_count.shape[1], len(event_count) // step_size))
     
-    v0 = {
-        "basal":  np.random.normal(params_basal['E_L'], 2*m_a/1000, n_cells['pyramidal']),
-        "apical": np.random.normal(params_apical['E_L'], 2*m_a/1000, n_cells['pyramidal']),
-        "inter_a":  params_inter['E_L'],
-        "inter_b":  params_inter['E_L']
-        }
-    
-    pyramidal = PyramidalCells(  
-                    params_basal=params_basal,
-                    input_basal=I_CA3,
-                    params_apical=params_apical,
-                    input_apical=I_EC,
-                    params_inter=params_inter,   
-                    n_cells=n_cells,
-                    weights=weights,
-                    plasticity=True,
-                    learning_rate=lr
-                    )
+    for i in range(firing_rates.shape[1]):
+        firing_rates[:, i] = np.sum(event_count[i * step_size:(i + 1) * step_size, :], axis = 0) / delta_t
 
-    _, _, _, event_count, burst_count, events, bursts = pyramidal.run_simulation(
-                v0, t0, tn, dt, n_patterns = int(n_plast_steps/20))
-    
-    cos_dist = pyramidal.cosine_distances
-    neuron_type = np.ones(n_pyr)
-    delta_t = 10
-
-    plot_weights(pyramidal.W_CA3, m_CA3, m_EC)
-
-    if True:
-        plot_results(events, bursts, delta_t, event_count, burst_count, tn, t, CA3_act, EC_inp.T, neuron_type, n_pyr, dt, cos_dist)
+    return firing_rates
 
 
 def plot_weights(W, m_CA3, m_EC):
-    # print(m_CA3, m_EC, m_CA3.shape, m_EC.shape, W.shape)
     sort_CA3 = np.argsort(m_CA3)
     sort_EC = np.argsort(m_EC)
-    print(sort_EC.shape, sort_CA3.shape)
 
     fig, ax = plt.subplots(figsize = (10,8), dpi = 200)
     sorted_W = W[np.ix_(sort_EC, sort_CA3)]
@@ -184,14 +175,14 @@ def plot_weights(W, m_CA3, m_EC):
 
 
 def main():
-    np.random.seed(42)
+    np.random.seed(1)
     
 
     len_track = 100. # 100
     tn = 1000
     av_running_speed = .2 # 0.2
     lr = .001 # 0.001
-    n_plast_steps = 1000 # 100
+    n_plast_steps = 4000 # 100
 
     n_cells = {'pyramidal' : 50, 'inter_a' : 5, 'inter_b' : 5, 'CA3' : 30}
 
@@ -202,7 +193,6 @@ def main():
     # Some measure of similarity between the two environments
     # Do the same in CA3, and we want similarity in CA1 to be higher than in CA3, do it column wise and row wise 
 
-    # print(t.shape, x.shape)
     # 
     # plt.figure()
     # plt.plot(t, x)
