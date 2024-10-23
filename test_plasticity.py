@@ -1,10 +1,7 @@
 import numpy as np 
 from neuron import PyramidalCells
 import matplotlib.pyplot as plt
-import pandas as pd
-from tqdm import tqdm
-from scipy.stats import pearsonr
-from scipy.spatial.distance import cosine
+import csv
 
 
 def get_events_bursts(n_pyr, spike_count, burst_count, dt):
@@ -139,10 +136,6 @@ def plot_weights(W_CA3, I_a_no_noise):
 
     print(np.where(I_a_no_noise > 0, 1, 0))
 
-    W_CA3_df = pd.DataFrame(W_CA3.round(5))
-    W_CA3_df.index = np.where(I_a_no_noise > 0, 1, 0)
-
-    W_CA3_df.to_csv('W_CA3.csv', index=True)
 
 
 def main():
@@ -155,24 +148,35 @@ def main():
     delta_t = 10
     eta = .001  
 
-    N_patterns = [1,2,3,4,5,10,20,50,100,200, 500, 1000]
+    N_patterns = [1,2,3,4,5,10,20,50,100,200,500,1000]
     print(N_patterns)
-    N_iter = 1
+    N_iter = [int(100/i) for i in N_patterns]
+    N_iter = [1 if i == 0 else i for i in N_iter]
     n_presentations = 10
 
-    mean_cos = np.zeros((N_iter, len(N_patterns)))
+    mean_cos = np.zeros((2, len(N_patterns)))
 
+    for j, n_patterns in enumerate(N_patterns):
+        cos = np.zeros((N_iter[j]))
 
-    for i in range(N_iter):
-        print(i)
-        for j, n_patterns in enumerate(N_patterns):
+        for i in range(N_iter[j]):
+            
             tn = n_presentations * n_patterns * 100
             cos_dist = run_simulation(n_pyr, n_int_a, n_int_b, n_CA3, tn, lr=eta, n_patterns=n_patterns)
 
-            mean_cos[i, j] = cos_dist
+            cos[i] = cos_dist
 
-    mean_cos_mean = mean_cos.mean(axis=0)
-    mean_cos_std = mean_cos.std(axis=0)
+        mean_cos[:, j] = np.mean(cos), np.std(cos)
+
+    mean_cos_mean = mean_cos[0, :]
+    mean_cos_std = mean_cos[1, :]
+
+    with open('cos_distances.csv', mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(N_patterns)
+        writer.writerow(N_iter)
+        writer.writerow(mean_cos_mean)
+        writer.writerow(mean_cos_std)
 
     plt.figure()
     plt.plot(N_patterns, mean_cos_mean, label='Mean Cosine Distance')
@@ -182,15 +186,6 @@ def main():
     plt.ylabel("Cosine distance")
     plt.legend()
     plt.savefig('plots/cosine_distance_low.png')
-
-    results = pd.DataFrame({
-        'N_patterns': N_patterns,
-        'Mean_Cosine_Distance': mean_cos_mean,
-        'Std_Dev': mean_cos_std
-    })
-
-    results.to_csv('results/cosine_distances.csv', index=False)
-
 
 
 if __name__ == "__main__":

@@ -1,8 +1,5 @@
 import numpy as np
-from tqdm import tqdm
 from scipy.spatial.distance import cosine
-from scipy.stats import pearsonr
-
 
 
 def runge_kutta(t_values, y_values, f, dt):
@@ -248,7 +245,7 @@ class PyramidalCells():
         self.burst_count = np.concatenate([self.burst_count, np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))])
 
         n_epochs = n_patterns 
-        zero_top_down = np.zeros((int(tn//dt), self.n_cells['pyramidal']))
+        zero_top_down = np.zeros((int(tn//dt + 10), self.n_cells['pyramidal']))
         
         for j in range(n_patterns):
             t_epoch = self.t_values[-1] + tn//n_epochs
@@ -262,7 +259,6 @@ class PyramidalCells():
     
 
     def retrieve_place_cells(self, t_run, x_run, dt, new_env = False):
-        # TODO: DOES THIS FUNCTION MAKE MUCH SENSE? MAYBE INSTEAD I SHOULD MAKE IT POSSIBLE TO RUN IN DIFFERENT ENVIRONMENT
         dt = self.dt
         t0_retrieval = self.t_values[-1]
 
@@ -280,12 +276,8 @@ class PyramidalCells():
             self.I_b, self.m_CA3, self.CA3_act = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['CA3'], m_b, self.m_CA3)
 
         zero_top_down = np.zeros((int(round(tn/dt)+10), self.n_cells['pyramidal']))
-        
-        self.I_a = lambda t: zero_top_down[int((t-t0_retrieval)/dt), :]
-        
+        self.I_a = lambda t: zero_top_down[int((t-t0_retrieval)/dt), :]   
         self.run_one_epoch(tn + t0_retrieval, dt)
-
-        print(self.spike_count.shape)
 
         return self.spike_count[int((t0_retrieval//dt)):, :]
 

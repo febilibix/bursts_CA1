@@ -17,8 +17,8 @@ def simulate_run(len_track = 200, n_runs = 20, av_running_speed = 20, dt = 0.01,
 
     # stopping_time_a = np.random.chisquare(3, size=n_runs) # the time the mouse will spend at the two ends of the track
     # stopping_time_b = np.random.chisquare(3, size=n_runs)
-    
     stopping_time_a = stopping_time_b = np.ones(n_runs) * 0
+
     x = np.array([])
     i = 0
     while True:
@@ -37,21 +37,6 @@ def simulate_run(len_track = 200, n_runs = 20, av_running_speed = 20, dt = 0.01,
     t = np.arange(len(x))/fps
 
     return t, x
-
-
-def simulate_activity(t, x, len_track = 100, n_cells = 30, tn = 1000, dt = 0.01, m = 8):
-    sigma_pf = len_track/8
-    m_cells = np.arange(0, len_track, len_track/n_cells)
-    np.random.shuffle(m_cells)
-   
-    activity = np.zeros((n_cells, int(tn/dt)))
-    for i in range(int(tn/dt)):
-        activity[:, i] = np.exp(-0.5 * ((m_cells - x[i])**2) / sigma_pf**2)
-
-    active_cells = np.random.choice([0, 1], size=(n_cells,), p=[0, 1]) # TODO: CHANGE THIS TO A PROBABILITY
-    activity = m * activity * active_cells[:, np.newaxis]
-
-    return activity, m_cells * active_cells
     
 
 def plot_track_CA3(t, x, activity):
@@ -75,42 +60,6 @@ def plot_track_CA3(t, x, activity):
     
     plt.savefig('plots/simulated_activity.png')
     plt.close()
-
-
-def run_simulation(len_track, av_running_speed, tn, n_cells, lr, n_plast_steps = 100):
-
-    # Setting the simulation time parameters 
-    dt = 0.01
-    max_runs = int(tn/20)
-    t_epoch = 50
-    tn = 4000
-
-    pyramidal = PyramidalCells(n_cells, weights = dict(), learning_rate = lr)
-    
-    t_run, x_run = simulate_run(len_track, max_runs, av_running_speed, dt, tn)
-    
-    pyramidal.learn_place_cells(t_run, x_run, t_epoch, dt)
-    plot_weights(pyramidal.W_CA3, pyramidal.m_CA3, pyramidal.m_EC)
-    
-    plot_track_CA3(t_run, x_run, pyramidal.CA3_act)
-
-    tn_retrieval = 1000
-    max_runs_rt = int(tn_retrieval/20)
-
-    t_run2, x_run2 = simulate_run(len_track, max_runs_rt, av_running_speed, dt, tn_retrieval)
-    
-    event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=False)
-    fr_old = get_firing_rates(pyramidal, event_count, delta_t = 10)
-
-    plot_firing_rates(fr_old, pyramidal.m_EC, out = 'old_env')
-
-    event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=True)
-    fr_new = get_firing_rates(pyramidal, event_count, delta_t = 10)
-
-    plot_firing_rates(fr_new, pyramidal.m_EC, out = 'new_env')
-
-    r_row, r_col = correlate_firing_rates(fr_old, fr_new)
-    print(r_row, r_col)
 
 
 def correlate_firing_rates(fr_old, fr_new):
@@ -175,31 +124,50 @@ def plot_weights(W, m_CA3, m_EC):
 
 
 def main():
-    np.random.seed(1)
-    
 
-    len_track = 100. # 100
+    # Setting the simulation time parameters 
+    n_cells = {'pyramidal' : 50, 'inter_a' : 5, 'inter_b' : 5, 'CA3' : 30}
+    len_track = 100. 
     tn = 1000
     av_running_speed = .2 # 0.2
+    dt = 0.01
+    max_runs = int(tn/20)
+    t_epoch = 50
     lr = .001 # 0.001
-    n_plast_steps = 4000 # 100
+    
 
-    n_cells = {'pyramidal' : 50, 'inter_a' : 5, 'inter_b' : 5, 'CA3' : 30}
+    pyramidal = PyramidalCells(n_cells, weights = dict(), learning_rate = lr)
+    
+    t_run, x_run = simulate_run(len_track, max_runs, av_running_speed, dt, tn)
+    
+    pyramidal.learn_place_cells(t_run, x_run, t_epoch, dt)
+    plot_weights(pyramidal.W_CA3, pyramidal.m_CA3, pyramidal.m_EC)
+    
+    plot_track_CA3(t_run, x_run, pyramidal.CA3_act)
 
-    run_simulation(len_track, av_running_speed, tn, n_cells, lr, n_plast_steps)
+    tn_retrieval = 1000
+    max_runs_rt = int(tn_retrieval/20)
 
-    # TODO: plot activity of CA1 neurons over space 
-    # repeat that for unseeen enviornment, by reshuffling CA3 spatial centres and no top down input
-    # Some measure of similarity between the two environments
-    # Do the same in CA3, and we want similarity in CA1 to be higher than in CA3, do it column wise and row wise 
+    t_run2, x_run2 = simulate_run(len_track, max_runs_rt, av_running_speed, dt, tn_retrieval)
+    
+    event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=False)
+    fr_old = get_firing_rates(pyramidal, event_count, delta_t = 10)
 
-    # 
-    # plt.figure()
-    # plt.plot(t, x)
-    # plt.xlabel('Time (s)')
-    # plt.ylabel('Position (cm)')
-    # plt.savefig('plots/simulated_run.png')
-    # plt.close()
+    print(pyramidal.CA3_act)
+    print(pyramidal.CA3_act.shape)
+    print(pyramidal.m_CA3)
+    plot_firing_rates(pyramidal.CA3_act, pyramidal.m_CA3, out = 'CA3_test')
+    quit()
+
+    plot_firing_rates(fr_old, pyramidal.m_EC, out = 'old_env')
+
+    event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=True)
+    fr_new = get_firing_rates(pyramidal, event_count, delta_t = 10)
+
+    plot_firing_rates(fr_new, pyramidal.m_EC, out = 'new_env')
+
+    r_row, r_col = correlate_firing_rates(fr_old, fr_new)
+    print(r_row, r_col)
 
 
 if __name__ ==  "__main__":
