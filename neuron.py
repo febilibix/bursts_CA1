@@ -187,7 +187,7 @@ class PyramidalCells():
         return lambda t: activity[:, int((t-t0)/dt)], m_cells, activity
     
 
-    def run_one_epoch(self, t_epoch, dt): # TODO: delete the dt as local variable
+    def run_one_epoch(self, t_epoch, dt, plasticity = True): # TODO: delete the dt as local variable
         dt = self.dt
             
         self.bursting = np.zeros(self.n_cells['pyramidal'])
@@ -230,7 +230,8 @@ class PyramidalCells():
             self.t_values.append(t_new)
 
         t_epoch = self.t_values[-1]
-        self.plasticity_step(t0, t_epoch, dt)
+        if plasticity:
+            self.plasticity_step(t0, t_epoch, dt)
         self.values = values_new
     
 
@@ -258,7 +259,7 @@ class PyramidalCells():
             self.cosine_distances.append(cosine_distance)
     
 
-    def retrieve_place_cells(self, t_run, x_run, dt, new_env = False):
+    def retrieve_place_cells(self, t_run, x_run, dt, new_env = False, a = 0):
         dt = self.dt
         t0_retrieval = self.t_values[-1]
 
@@ -270,14 +271,20 @@ class PyramidalCells():
         self.spike_count = np.concatenate([self.spike_count, np.zeros((int(round((tn) / dt)), self.n_cells['pyramidal']))])
         self.burst_count = np.concatenate([self.burst_count, np.zeros((int(round((tn) / dt)), self.n_cells['pyramidal']))])
 
-        if new_env:
-            self.I_b, self.m_CA3, self.CA3_act = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['CA3'], m_b)
+        if not hasattr(self, 'I_b_n'):
+            self.I_b_n, self.m_CA3_n, self.CA3_act_n = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['CA3'], m_b)
+        self.I_b_o, self.m_CA3_o, self.CA3_act_o = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['CA3'], m_b, self.m_CA3)
+        
+        if not new_env:
+            self.I_b, self.m_CA3, self.CA3_act = self.I_b_o, self.m_CA3_o, self.CA3_act_o
         else:
-            self.I_b, self.m_CA3, self.CA3_act = self.create_activity_pc(x_run, len_track, dt, tn, self.n_cells['CA3'], m_b, self.m_CA3)
+            self.m_CA3 = self.m_CA3_o
+            self.CA3_act = (1-a)*self.CA3_act_o + a*self.CA3_act_n
+            self.I_b = lambda t: self.CA3_act[:, int((t-t0_retrieval)/dt)]  
 
         zero_top_down = np.zeros((int(round(tn/dt)+10), self.n_cells['pyramidal']))
         self.I_a = lambda t: zero_top_down[int((t-t0_retrieval)/dt), :]   
-        self.run_one_epoch(tn + t0_retrieval, dt)
+        self.run_one_epoch(tn + t0_retrieval, dt, plasticity=False)
 
         return self.spike_count[int((t0_retrieval//dt)):, :]
 

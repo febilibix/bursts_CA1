@@ -71,7 +71,7 @@ def correlate_firing_rates(fr_old, fr_new):
     for i in range(fr_old.shape[1]):
         cor_col[i] = pearsonr(fr_old[:, i], fr_new[:, i])[0]
  
-    return np.mean(cor_row), np.mean(cor_col)
+    return np.nanmean(cor_row), np.nanmean(cor_col)
 
 
 def plot_firing_rates(firing_rates, m_EC, out):
@@ -89,7 +89,7 @@ def plot_firing_rates(firing_rates, m_EC, out):
     extent = [0, 100, 0, mean_firing_rates.shape[0]]
     im = ax.imshow(mean_firing_rates, aspect='auto', extent=extent, origin='lower')
     fig.colorbar(im, ax=ax)
-    ax.set_title("Firing rates of CA1 neurons")
+    ax.set_title(f"Firing rates of {'CA1' if not out.startswith('CA3') else 'CA3'} neurons")
     ax.set_xlabel("Position (cm)")
     ax.set_ylabel("Neuron")
     plt.savefig(f'plots/firing_rates_{out}.png')
@@ -123,52 +123,102 @@ def plot_weights(W, m_CA3, m_EC):
     plt.close()
 
 
+def plot_correlations(A, cors_col, cors_row):
+
+    cors = {"columns": cors_col, "rows": cors_row}
+    fig, axs = plt.subplots(1, 2, figsize = (12,6), dpi = 400, sharey=True)
+    axs[0].set_ylabel('Average correlation')
+
+    for i, (cor_name, cor) in enumerate(cors.items()):
+
+        mean_cor = np.nanmean(cor, axis = 2)
+        std_cor = np.nanstd(cor, axis = 2)
+        print(cor_name)
+        print('mean', mean_cor, 'std', std_cor)
+
+        lower, upper = mean_cor - std_cor, mean_cor + std_cor
+
+        axs[i].plot(A, mean_cor, label = ['CA1', 'CA3'])
+        axs[i].fill_between(A, lower[:, 0], upper[:, 0], alpha=0.3)
+        axs[i].fill_between(A, lower[:, 1], upper[:, 1], alpha=0.3)
+        axs[i].set_title(f'Average correlation over {cor_name}')
+        axs[i].set_xlabel('Similarity between environments')
+        axs[i].legend()
+
+    plt.tight_layout()
+    plt.savefig('plots/correlation_unf_fam.png')
+    plt.close()
+
+
 def main():
+    np.random.seed(0)
 
     # Setting the simulation time parameters 
     n_cells = {'pyramidal' : 50, 'inter_a' : 5, 'inter_b' : 5, 'CA3' : 30}
     len_track = 100. 
-    tn = 1000
+    tn = 4000
     av_running_speed = .2 # 0.2
     dt = 0.01
     max_runs = int(tn/20)
     t_epoch = 50
     lr = .001 # 0.001
-    
-
-    pyramidal = PyramidalCells(n_cells, weights = dict(), learning_rate = lr)
-    
-    t_run, x_run = simulate_run(len_track, max_runs, av_running_speed, dt, tn)
-    
-    pyramidal.learn_place_cells(t_run, x_run, t_epoch, dt)
-    plot_weights(pyramidal.W_CA3, pyramidal.m_CA3, pyramidal.m_EC)
-    
-    plot_track_CA3(t_run, x_run, pyramidal.CA3_act)
 
     tn_retrieval = 1000
     max_runs_rt = int(tn_retrieval/20)
 
+    A = np.round(np.arange(0,1.1,0.5),1)
+    N_simulations = 2
+    cors_col_all, cors_row_all = np.zeros((len(A), 2, N_simulations)), np.zeros((len(A), 2, N_simulations))
+
+    t_run, x_run = simulate_run(len_track, max_runs, av_running_speed, dt, tn)
     t_run2, x_run2 = simulate_run(len_track, max_runs_rt, av_running_speed, dt, tn_retrieval)
     
-    event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=False)
-    fr_old = get_firing_rates(pyramidal, event_count, delta_t = 10)
+    for sim in range(N_simulations):
+        pyramidal = PyramidalCells(n_cells, weights = dict(), learning_rate = lr)
+        pyramidal.learn_place_cells(t_run, x_run, t_epoch, dt)
+        # plot_weights(pyramidal.W_CA3, pyramidal.m_CA3, pyramidal.m_EC) 
+        # plot_track_CA3(t_run, x_run, pyramidal.CA3_act)
 
-    print(pyramidal.CA3_act)
-    print(pyramidal.CA3_act.shape)
-    print(pyramidal.m_CA3)
-    plot_firing_rates(pyramidal.CA3_act, pyramidal.m_CA3, out = 'CA3_test')
-    quit()
+        ## Retrieval familiar environment
+        event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=False)
+        fr_old = get_firing_rates(pyramidal, event_count, delta_t = 10)
 
-    plot_firing_rates(fr_old, pyramidal.m_EC, out = 'old_env')
+        m_CA3_old = pyramidal.m_CA3
+        CA3_act_old = pyramidal.CA3_act.copy()
+        # plot_firing_rates(pyramidal.CA3_act, m_CA3_old, out = 'CA3_old_env')
+        # plot_firing_rates(fr_old, pyramidal.m_EC, out = 'old_env')
 
-    event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=True)
-    fr_new = get_firing_rates(pyramidal, event_count, delta_t = 10)
+        cors_col = np.zeros((len(A), 2))
+        cors_row = np.zeros((len(A), 2))
+        for i, a in enumerate(A):
+            print("a =", a)
+            
+            ## Retrieval new environment
+            event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=True, a = a)
+            fr_new = get_firing_rates(pyramidal, event_count, delta_t = 10)
 
-    plot_firing_rates(fr_new, pyramidal.m_EC, out = 'new_env')
+            # plot_firing_rates(pyramidal.CA3_act, m_CA3_old, out = 'CA3_new_env')
+            # plot_firing_rates(fr_new, pyramidal.m_EC, out = 'new_env')
 
-    r_row, r_col = correlate_firing_rates(fr_old, fr_new)
-    print(r_row, r_col)
+            print('Correlation CA1')
+            r_row, r_col = correlate_firing_rates(fr_old, fr_new)
+            print(r_row, r_col)
 
+            print('Correlation CA3')
+            r_row_CA3, r_col_CA3 = correlate_firing_rates(CA3_act_old, pyramidal.CA3_act)
+            print(r_row_CA3, r_col_CA3)
+
+            cors_col[i, :] = r_col, r_col_CA3
+            cors_row[i, :] = r_row, r_row_CA3
+
+        cors_col_all[:, :, sim] = cors_col
+        cors_row_all[:, :, sim] = cors_row
+    
+    plot_correlations(A, cors_col_all, cors_row_all)
+
+
+
+    
 
 if __name__ ==  "__main__":
     main()
