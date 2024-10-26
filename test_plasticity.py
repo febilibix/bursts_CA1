@@ -1,5 +1,7 @@
 import numpy as np 
 from neuron import PyramidalCells
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import csv
 
@@ -156,6 +158,10 @@ def main():
 
     mean_cos = np.zeros((2, len(N_patterns)))
 
+    with open('cos_distances.csv', mode='a') as file:
+        writer = csv.writer(file)
+        writer.writerow(["N_patterns", "N_iter", "Mean_cos_mean", "Mean_cos_std"])
+    
     for j, n_patterns in enumerate(N_patterns):
         cos = np.zeros((N_iter[j]))
 
@@ -167,6 +173,10 @@ def main():
             cos[i] = cos_dist
 
         mean_cos[:, j] = np.mean(cos), np.std(cos)
+
+        with open('cos_distances.csv', mode='a') as file:
+            writer = csv.writer(file)
+            writer.writerow([n_patterns, N_iter[j], np.mean(cos), np.std(cos)])
 
     mean_cos_mean = mean_cos[0, :]
     mean_cos_std = mean_cos[1, :]
