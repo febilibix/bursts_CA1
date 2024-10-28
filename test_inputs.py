@@ -1,7 +1,8 @@
 import numpy as np 
 from neuron import PyramidalCells
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+import matplotlib
+matplotlib.use('Agg')
 
 
 def create_inputs_constant(N = 50, dt = 0.01, tn = 100, m = 8, sigma = 0.01):

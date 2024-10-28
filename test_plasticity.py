@@ -181,13 +181,6 @@ def main():
     mean_cos_mean = mean_cos[0, :]
     mean_cos_std = mean_cos[1, :]
 
-    with open('cos_distances.csv', mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(N_patterns)
-        writer.writerow(N_iter)
-        writer.writerow(mean_cos_mean)
-        writer.writerow(mean_cos_std)
-
     plt.figure()
     plt.plot(N_patterns, mean_cos_mean, label='Mean Cosine Distance')
     plt.fill_between(N_patterns, mean_cos_mean - mean_cos_std, mean_cos_mean + mean_cos_std, alpha=0.3, label='Std Dev')

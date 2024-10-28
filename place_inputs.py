@@ -1,7 +1,10 @@
 import numpy as np 
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from neuron import PyramidalCells
 from scipy.stats import pearsonr
+import csv
 
 
 def simulate_run(len_track = 200, n_runs = 20, av_running_speed = 20, dt = 0.01, tn = 1000):
@@ -138,7 +141,8 @@ def plot_correlations(A, cors_col, cors_row):
 
         lower, upper = mean_cor - std_cor, mean_cor + std_cor
 
-        axs[i].plot(A, mean_cor, label = ['CA1', 'CA3'])
+        axs[i].plot(A, mean_cor[:, 0], label = 'CA1')
+        axs[i].plot(A, mean_cor[:, 1], label = 'CA3')
         axs[i].fill_between(A, lower[:, 0], upper[:, 0], alpha=0.3)
         axs[i].fill_between(A, lower[:, 1], upper[:, 1], alpha=0.3)
         axs[i].set_title(f'Average correlation over {cor_name}')
@@ -166,12 +170,16 @@ def main():
     tn_retrieval = 1000
     max_runs_rt = int(tn_retrieval/20)
 
-    A = np.round(np.arange(0,1.1,0.5),1)
-    N_simulations = 2
+    A = [0.6] # np.round(np.arange(0,1.1,0.1),1)
+    N_simulations = 1 # 10
     cors_col_all, cors_row_all = np.zeros((len(A), 2, N_simulations)), np.zeros((len(A), 2, N_simulations))
 
     t_run, x_run = simulate_run(len_track, max_runs, av_running_speed, dt, tn)
     t_run2, x_run2 = simulate_run(len_track, max_runs_rt, av_running_speed, dt, tn_retrieval)
+
+    with open('correlations.csv', mode='a') as file:
+        writer = csv.writer(file)
+        writer.writerow(["simulation", "a", "cor_row_CA1", "cor_col_CA1", "cor_row_CA3", "cor_col_CA3"])
     
     for sim in range(N_simulations):
         pyramidal = PyramidalCells(n_cells, weights = dict(), learning_rate = lr)
@@ -185,8 +193,8 @@ def main():
 
         m_CA3_old = pyramidal.m_CA3
         CA3_act_old = pyramidal.CA3_act.copy()
-        # plot_firing_rates(pyramidal.CA3_act, m_CA3_old, out = 'CA3_old_env')
-        # plot_firing_rates(fr_old, pyramidal.m_EC, out = 'old_env')
+        plot_firing_rates(pyramidal.CA3_act, m_CA3_old, out = 'CA3_old_env')
+        plot_firing_rates(fr_old, pyramidal.m_EC, out = 'old_env')
 
         cors_col = np.zeros((len(A), 2))
         cors_row = np.zeros((len(A), 2))
@@ -197,8 +205,8 @@ def main():
             event_count = pyramidal.retrieve_place_cells(t_run2, x_run2, dt, new_env=True, a = a)
             fr_new = get_firing_rates(pyramidal, event_count, delta_t = 10)
 
-            # plot_firing_rates(pyramidal.CA3_act, m_CA3_old, out = 'CA3_new_env')
-            # plot_firing_rates(fr_new, pyramidal.m_EC, out = 'new_env')
+            plot_firing_rates(pyramidal.CA3_act, m_CA3_old, out = 'CA3_new_env')
+            plot_firing_rates(fr_new, pyramidal.m_EC, out = 'new_env')
 
             print('Correlation CA1')
             r_row, r_col = correlate_firing_rates(fr_old, fr_new)
@@ -210,6 +218,10 @@ def main():
 
             cors_col[i, :] = r_col, r_col_CA3
             cors_row[i, :] = r_row, r_row_CA3
+
+            with open('correlations.csv', mode='a') as file:
+                writer = csv.writer(file)
+                writer.writerow([sim, a, r_row, r_col, r_row_CA3, r_col_CA3])
 
         cors_col_all[:, :, sim] = cors_col
         cors_row_all[:, :, sim] = cors_row

@@ -165,7 +165,6 @@ class PyramidalCells():
         
         for j in range(n_epochs):
             t_epoch = self.t_values[-1] + t_per_epoch
-            print('Epoch', t_epoch)
             self.run_one_epoch(t_epoch, dt)
 
 
@@ -233,6 +232,7 @@ class PyramidalCells():
         if plasticity:
             self.plasticity_step(t0, t_epoch, dt)
         self.values = values_new
+        self.all_values = values
     
 
     def pattern_retrieval(self, patterns, top_down, t_per_pattern, dt=.01): # TODO: delete the dt as local variable
