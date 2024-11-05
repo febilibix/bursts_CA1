@@ -85,8 +85,8 @@ def create_plot_cos_dist(N_patterns, mean_cos_mean, mean_cos_std, interp_N_patte
     plt.figure()
     plt.plot(N_patterns, mean_cos_mean, label='Mean Cosine Distance')
     # plt.plot(interp_N_patterns, interp_cos_mean)
-    plt.plot(interp_N_patterns, func1(interp_N_patterns, *popt1), 'r--')
-    plt.plot(interp_N_patterns, func2(interp_N_patterns, *popt2), 'b--')
+    # plt.plot(interp_N_patterns, func1(interp_N_patterns, *popt1), 'r--')
+    # plt.plot(interp_N_patterns, func2(interp_N_patterns, *popt2), 'b--')
     # plt.plot(interp_N_patterns, 5/interp_N_patterns + 0.5, 'g--')
     plt.fill_between(N_patterns, mean_cos_mean - mean_cos_std, mean_cos_mean + mean_cos_std, alpha=0.3, label='Std Dev')
     plt.title("Cosine distances as function of number of patterns")
@@ -129,16 +129,16 @@ def run_one_neuron_and_plot():
 
 
 def func1(x, a, b, c): 
-    return a*np.exp(-b*x) + c
+    return a/x**.5 + b
 
 
-def func2(x, a, b, c, d):
-    return a/x + b/(x**(1/2)) + c/(x**(1/3)) + d
+# def func2(x, a, b, c, d):
+#     return  c/(x**(1/3)) + d
 
 
 def get_cos_dist_and_plot():
 
-    df = pd.read_csv('cos_distances.csv')
+    df = pd.read_csv('cos_distances_50_cells.csv')
     N_patterns = df['N_patterns'].values
     mean_cos_mean = df['Mean_cos_mean'].values
     mean_cos_std = df['Mean_cos_std'].values
@@ -149,16 +149,33 @@ def get_cos_dist_and_plot():
     interp_mean_cos_mean = interp_func(interp_N_patterns)
 
     popt1, pcov = curve_fit(func1, interp_N_patterns, interp_mean_cos_mean)
-    popt2, pcov = curve_fit(func2, interp_N_patterns, interp_mean_cos_mean)
-
+    # popt2, pcov = curve_fit(func2, interp_N_patterns, interp_mean_cos_mean)
+    popt2 = None
     print(popt1)
 
     create_plot_cos_dist(N_patterns, mean_cos_mean, mean_cos_std, interp_N_patterns, interp_mean_cos_mean, popt1, popt2)
 
 
+def plot_multiple_cos_dist():
+    plt.figure()
+
+    for n_cells in [50, 100, 200]:
+        df = pd.read_csv(f'cos_distances_{n_cells}_cells.csv')
+        N_patterns = df['N_patterns'].values
+        mean_cos_mean = df['Mean_cos_mean'].values
+        mean_cos_std = df['Mean_cos_std'].values
+
+        plt.plot(N_patterns, mean_cos_mean, label=f'{n_cells} cells')
+        plt.fill_between(N_patterns, mean_cos_mean - mean_cos_std, mean_cos_mean + mean_cos_std, alpha=0.3)
+
+    plt.legend()
+    plt.savefig('plots/cosine_distances_multiple.png', dpi = 300)
+
+
 def main():
     # run_one_neuron_and_plot()
     get_cos_dist_and_plot()
+    plot_multiple_cos_dist()
 
 
 if __name__ == "__main__":
