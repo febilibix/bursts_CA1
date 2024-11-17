@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from neuron import PyramidalCells
 from scipy.stats import pearsonr
 import csv
+import os
 
 
 def simulate_run(len_track = 200, n_runs = 20, av_running_speed = 20, dt = 0.01, tn = 1000):
@@ -59,7 +60,7 @@ def custom_plot(ax=None, x_data=None, y_data=None, title="My Plot", xlabel="X-Ax
     ax.set_ylabel(ylabel)
     if label is not None:
         ax.legend()
-    ax.grid(True)
+    # ax.grid(True)
     
     # Return the Axes object for further customization
     return ax
@@ -110,7 +111,10 @@ def plot_firing_rates(fig, ax, firing_rates, m_EC, out):
     ###### FOR NOW SINCE RETRIEVAL IS ONLY ONE WAY FORWARD AND ONE WAY BACK, I CAN JUST SPLIT IN MIDDLE AND MEAN. 
     ###### IDEALLY I WOULD SOMEHOW PUT IT IN BINS ACCORDING TO POSITION AND THEN MEAN OVER THAT
 
-    half = sorted_fr.shape[1] // 2
+    lap = sorted_fr.shape[1] // 16
+    mean_firing_rates = sum([sorted_fr[:, i*lap:(i+1)*lap] for i in range(16)]) / 16
+
+    half = mean_firing_rates.shape[1] // 2
     mean_firing_rates = (sorted_fr[:, :half] + sorted_fr[:, :-half-1:-1]) / 2
 
     extent = [0, 100, 0, mean_firing_rates.shape[0]]
@@ -124,15 +128,19 @@ def plot_firing_rates(fig, ax, firing_rates, m_EC, out):
 
 
 
-def get_firing_rates(pyramidal, event_count, delta_t = 10):
+def get_firing_rates(pyramidal, event_count):
     # event_count = pyramidal.spike_count
    
-    step_size = int(delta_t // pyramidal.dt)
-    firing_rates = np.zeros((event_count.shape[1], len(event_count) // step_size))
+    # step_size = int(delta_t // pyramidal.dt)
+    # firing_rates = np.zeros((event_count.shape[1], len(event_count) // step_size))
+    firing_rates = np.zeros((event_count.shape[1], 1024))
+
+    step_size = len(event_count)//firing_rates.shape[1]
     
     for i in range(firing_rates.shape[1]):
-        firing_rates[:, i] = np.sum(event_count[i * step_size:(i + 1) * step_size, :], axis = 0) / delta_t
+        firing_rates[:, i] = np.sum(event_count[i * step_size:(i + 1) * step_size, :], axis = 0) / (step_size*pyramidal.dt)
 
+    print(firing_rates.shape, firing_rates)
     return firing_rates
 
 
@@ -246,47 +254,67 @@ def test_correlations_fam_novel(len_track, tn, av_running_speed, dt, n_cells, lr
 
 
 def main():
-    np.random.seed(0)
+    np.random.seed(1)
     t_epoch = 50
 
     lrs = [0.00001, 0.00005, 0.0001, 0.0005, 0.001]
     v_ths = [-35, -40, -45, -50, -55]
     taus = [1, 5, 10, 15, 20, 25]
-    run_for_speed(av_running_speed = 0.2, lrs = lrs, v_ths = v_ths, taus = taus, t_epoch = t_epoch, out_folder = 'param_tuning')
+    # run_for_speed(av_running_speed = 0.2, lrs = lrs, v_ths = v_ths, taus = taus, t_epoch = t_epoch, out_folder = 'param_tuning')
 
-    # t_epoch = 2
-    # speed = 5
-    # run_for_speed(av_running_speed = speed, lrs = [0.001], v_ths = [-35], taus = [10], t_epoch = t_epoch, out_folder = 'adapt_speed')
+    n_pyr = 50
+    t_epoch = 0.5
+    speed = 20
+    tau_bs = [0.15]
+    I_as = [9]
+
+    run_for_speed(av_running_speed = speed, tau_bs=tau_bs, t_epoch = t_epoch, out_folder = 'adapt_speed', I_as = I_as) 
 
     
-def run_for_speed(av_running_speed = 0.2, lrs = [0.001], v_ths = [-35], taus = [10], t_epoch = 50, out_folder = 'param_tuning'):
+def run_for_speed(av_running_speed = 0.2, lrs = [0.00005], v_ths = [-45], taus = [10], t_epoch = 50, out_folder = 'param_tuning', tau_bs = [10], I_as = [130]):
     # Setting the simulation time parameters 
     n_cells = {'pyramidal' : 50, 'inter_a' : 5, 'inter_b' : 5, 'CA3' : 30}
     len_track = 100. 
-    tn = 2000
+    tn = 200
 
-    dt = 0.01
+    dt = 0.001
     max_runs = int(2*tn/(len_track/av_running_speed))
 
     t_run, x_run = simulate_run(len_track, max_runs, av_running_speed, dt, tn)
-    tn_retrieval = len_track/av_running_speed*2
-    max_runs_rt = int(2*tn_retrieval/(len_track/av_running_speed))
-    t_run2, x_run2 = simulate_run(len_track, max_runs_rt, av_running_speed, dt, tn_retrieval)
+    av_running_speed_rt = av_running_speed
+    tn_retrieval = len_track/av_running_speed_rt*32
+    max_runs_rt = int(2*tn_retrieval/(len_track/av_running_speed_rt))
+    t_run2, x_run2 = simulate_run(len_track, max_runs_rt, av_running_speed_rt, dt, tn_retrieval)
 
+    plt.figure()
+    plt.plot(t_run2, x_run2)
+    plt.savefig('plots/simulated_run_test.png')
 
     t_run, x_run = (t_run, t_run2), (x_run, x_run2)
+
+    
 
     for lr in lrs:
         for v_th in v_ths:
             for tau in taus:
-                print(f"lr = {lr}, v_th = {v_th}, tau = {tau}")
-                param_tuning(lr, v_th, tau, t_run, x_run, t_epoch, tn, n_cells, out_folder)
+                for tau_b in tau_bs:
+                    for I_a in I_as:
+                        tau = 2*tau_b
+                        out = f"lr_{lr}_v_th_{v_th}_tau_{tau}" if out_folder != 'adapt_speed' else f"taub_{tau_b}_Ia_{I_a}"
+                        if os.path.exists(f'plots/{out_folder}/{out}_test.png'):
+                            continue
+                        
+                        print(f"lr = {lr}, v_th = {v_th}, tau = {tau}")
+                        param_tuning(lr, v_th, tau, t_run, x_run, t_epoch, tn, n_cells, out_folder, dt = dt, tau_b = tau_b, I_a = I_a)
 
 
-def param_tuning(lr, v_th, tau, t_run, x_run, t_epoch, tn, n_cells, out_folder = 'param_tuning'):
+def param_tuning(lr, v_th, tau, t_run, x_run, t_epoch, tn, n_cells, out_folder = 'param_tuning', dt = 0.01, tau_b = 10, I_a = 130):
 
-    pyramidal = PyramidalCells(n_cells, weights = dict(), learning_rate = lr)
+    pyramidal = PyramidalCells(n_cells, weights = dict(), learning_rate = lr, dt = dt)
     pyramidal.pa = {"E_L": -65, "R": 10, "v_th": v_th, "tau": tau} 
+    pyramidal.pb['tau'] = tau_b
+
+    pyramidal.ma_pc, pyramidal.mb_pc = I_a, 30.77*I_a
     pyramidal.learn_place_cells(t_run[0], x_run[0], t_epoch)
 
     
@@ -296,21 +324,34 @@ def param_tuning(lr, v_th, tau, t_run, x_run, t_epoch, tn, n_cells, out_folder =
     gs = gridspec.GridSpec(3, 2, height_ratios=[0.25, 0.25, 0.5])  # Adjust heights as needed
 
     # Top row: two full-width subplots
-    ax1 = fig.add_subplot(gs[1, :])  # Top-left (spans both columns)
-    ax2 = fig.add_subplot(gs[0, :])  # Top-right (also spans both columns)
+    ax1 = fig.add_subplot(gs[0, :])  # Top-left (spans both columns)
+    ax2 = fig.add_subplot(gs[1, :])  # Top-right (also spans both columns)
     ax3 = fig.add_subplot(gs[2, 0])  # Bottom-left
     ax4 = fig.add_subplot(gs[2, 1])
 
     axs = [ax1, ax2, ax3, ax4]
     
-    axs[0] = custom_plot(ax=axs[0], x_data=t_run[0], y_data=x_run[0], title="", xlabel="Time (s)", ylabel="Mouse trajectory")
-    axs[1] = custom_plot(ax=axs[1], x_data=np.arange(0, tn, t_epoch), y_data=pyramidal.burst_rate, title="", xlabel="Time (s)", ylabel="Burst rate")
+    # axs[0] = custom_plot(ax=axs[0], x_data=t_run[0], y_data=x_run[0], title="", xlabel="Time (s)", ylabel="Mouse trajectory")
+    axs[0].plot(np.arange(0, tn, t_epoch), pyramidal.burst_rate, color = 'blue', label = 'Burst rate')
+    axs[1].plot(np.arange(0, tn, t_epoch), pyramidal.spike_rate, color = 'black', label = 'Spike rate')
+    axs[1].plot(np.arange(0,tn,1), np.ones(tn)*15, ls = "--", color = 'red', label = '15 Hz')
+    # axs[1].set_title("Burst and spike rate")
+    for i in (0,1):
+        axs[i].set_xlabel("Time (s)")
+        axs[i].set_ylabel("Rate (Hz)")
+        axs[i].legend()
+        axs[i].grid(True)
+
+
     fig, axs[2] = plot_weights(fig, axs[2], pyramidal.W_CA3, pyramidal.m_CA3, pyramidal.m_EC)
     event_count = pyramidal.retrieve_place_cells(t_run[1], x_run[1], new_env=False)
-    fr = get_firing_rates(pyramidal, event_count, delta_t = 1)
+    fr = get_firing_rates(pyramidal, event_count)
+    print(fr.shape)
+
     fig, axs[3] = plot_firing_rates(fig, axs[3], fr, pyramidal.m_EC, 'CA1_test')
     plt.tight_layout()
-    plt.savefig(f'plots/{out_folder}/lr_{lr}_v_th_{v_th}_tau_{tau}.png')
+    out = f"lr_{lr}_v_th_{v_th}_tau_{tau}" if out_folder != 'adapt_speed' else f"taub_{tau_b}_Ia_{I_a}"
+    plt.savefig(f'plots/{out_folder}/{out}_test.png')
     
     plt.close()
     # plot_track_CA3(t_run, x_run, pyramidal.CA3_act)
