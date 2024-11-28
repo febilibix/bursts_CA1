@@ -40,8 +40,8 @@ class PyramidalCells():
         
         self.t_values = [0.]
         
-        self.pb  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 10}
-        self.pa = {"E_L": -65, "R": 10, "v_th": -50, "tau": 5} 
+        self.pb  = {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.125}
+        self.pa = {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.25} 
         #  {"E_L": -65, "R": 10, "v_th": -50, "tau": 5}
         self.pi  = {"E_L": -65, "R": 10, "v_th": -50, "tau": 20}
 
@@ -85,9 +85,12 @@ class PyramidalCells():
         self.burst_rate = []
         self.spike_rate = []
 
-        self.ma_pc, self.mb_pc = 2*6.5, 8*self.n_cells['pyramidal']*2
+        
         self.trace_events, self.trace_bursts = [], []
-        self.C = .1
+        self.alpha = 0.01
+        self.p_active = 1
+
+        self.ma_pc, self.mb_pc = 8, (1/self.p_active)*4.9*2*self.n_cells['pyramidal']
         
         
     def dynamics_basal(self, t, v):
@@ -155,7 +158,7 @@ class PyramidalCells():
                 self.firing_rate_means.append(self.spike_count.mean(axis=0).mean())
             
 
-    def learn_place_cells(self, t_run, x_run, t_per_epoch):
+    def learn_place_cells(self, t_run, x_run, t_per_epoch, top_down = True):
         dt = self.dt
 
         m_a, m_b = self.ma_pc, self.mb_pc 
@@ -164,9 +167,15 @@ class PyramidalCells():
         len_track = np.max(x_run)
         n_epochs = int(round(tn/t_per_epoch))
 
+        full_spike_count = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
+
         x = x_run[:int((t_per_epoch)/dt)]
         self.I_b, self.m_CA3, self.CA3_act = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['CA3'], m_b)
-        self.I_a, self.m_EC, _ = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['pyramidal'], m_a)
+        if top_down:
+            self.I_a, self.m_EC, _ = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['pyramidal'], m_a)
+        else:
+            self.I_a = lambda t: np.zeros(self.n_cells['pyramidal'])
+            self.m_EC = np.arange(0, len_track, len_track/self.n_cells['pyramidal']) ## TODO: I guess i will need to adapt this, not sure yet how
 
         for j in range(n_epochs):
             t0_epoch = j*t_per_epoch
@@ -177,27 +186,51 @@ class PyramidalCells():
             x = x_run[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt)]
 
             self.I_b, self.m_CA3, self.CA3_act = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['CA3'], m_b, self.m_CA3)
-            self.I_a, self.m_EC, _ = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['pyramidal'], m_a, self.m_EC)
+            if top_down:
+                self.I_a, self.m_EC, _ = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['pyramidal'], m_a, self.m_EC)
+            else:
+                self.I_a = lambda t: np.zeros(self.n_cells['pyramidal'])
             
             self.run_one_epoch(t_per_epoch)
+
+            full_spike_count[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.spike_count
+
+        return full_spike_count
 
 
     def create_activity_pc(self, x, len_track, t_per_epoch, n_cells, m, m_cells = None): 
         dt = self.dt
         sigma_pf = len_track/8
+        # active_cells = np.random.choice([0, 1], size=(n_cells,), p=[0.3, 0.7])
+        n_active = int(n_cells*self.p_active)
 
         # TODO: I will probably need to make the m_cells a class attribute
-        if m_cells is None:
-            m_cells = np.arange(0, len_track, len_track/n_cells) 
-            np.random.shuffle(m_cells)
+        
+        m_cells_new = np.arange(0, len_track, len_track/n_active)
 
-        activity = np.zeros((n_cells, x.shape[0] + 5))
+        activity = np.zeros((n_active, x.shape[0] + 5))
         
         for i in range(x.shape[0]):
-            activity[:, i] = np.exp(-0.5 * ((m_cells - x[i])**2) / sigma_pf**2)
+            activity[:, i] = m * np.exp(-0.5 * ((m_cells_new - x[i])**2) / sigma_pf**2)
 
-        active_cells = np.random.choice([0, 1], size=(n_cells,), p=[0, 1]) # TODO: CHANGE THIS TO A PROBABILITY
-        activity = m * activity * active_cells[:, np.newaxis]
+        if m_cells is None:
+            activity = np.vstack([activity, np.zeros((n_cells-n_active, x.shape[0] + 5))])
+            m_cells = np.hstack([m_cells_new, np.zeros(n_cells - n_active)])
+
+            activity_indices = np.arange(n_cells)
+            np.random.shuffle(activity_indices)
+
+            activity = activity[activity_indices, :]
+            m_cells = m_cells[activity_indices] 
+
+        else:
+            new_activity = np.zeros((n_cells, x.shape[0] + 5))
+
+            m_cells_new_indices = {value: idx for idx, value in enumerate(m_cells_new)}
+            valid_indices = np.isin(m_cells, m_cells_new) & (m_cells != 0)
+            mapped_indices = np.vectorize(m_cells_new_indices.get)(m_cells[valid_indices])
+            new_activity[valid_indices] = activity[mapped_indices]
+            activity = new_activity            
 
         return lambda t: activity[:, int(t/dt)], m_cells, activity
     
@@ -276,32 +309,48 @@ class PyramidalCells():
             self.cosine_distances.append(cosine_distance)
     
 
-    def retrieve_place_cells(self, t_run, x_run, new_env = False, a = 0):
+    def retrieve_place_cells(self, t_run, x_run, new_env = False, a = 0, t_per_epoch = None, top_down = False):
         dt = self.dt
         m_a, m_b = self.ma_pc, self.mb_pc
 
         tn = t_run[-1]
         len_track = np.max(x_run)
-
-        self.spike_count = np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))
-        self.burst_count = np.zeros((int(round(tn / dt)), self.n_cells['pyramidal']))
-
-        if not hasattr(self, 'I_b_n'):
-            self.I_b_n, self.m_CA3_n, self.CA3_act_n = self.create_activity_pc(x_run, len_track, tn, self.n_cells['CA3'], m_b)
-        self.I_b_o, self.m_CA3_o, self.CA3_act_o = self.create_activity_pc(x_run, len_track, tn, self.n_cells['CA3'], m_b, self.m_CA3)
+        if not t_per_epoch:
+            t_per_epoch = tn
         
-        if not new_env:
-            self.I_b, self.m_CA3, self.CA3_act = self.I_b_o, self.m_CA3_o, self.CA3_act_o
-        else:
-            self.m_CA3 = self.m_CA3_o
-            self.CA3_act = (1-a)*self.CA3_act_o + a*self.CA3_act_n
-            self.I_b = lambda t: self.CA3_act[:, int(t/dt)]  
+        n_epochs = int(round(tn/t_per_epoch))
+        full_spike_count = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
 
-        zero_top_down = np.zeros((int(round(tn/dt)+10), self.n_cells['pyramidal']))
-        self.I_a = lambda t: zero_top_down[int(t/dt), :]   
-        self.run_one_epoch(tn, plasticity=False)
+        for j in range(n_epochs):
+            t0_epoch = j*t_per_epoch
 
-        return self.spike_count
+            x = x_run[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt)]
+            self.spike_count = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['pyramidal']))
+            self.burst_count = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['pyramidal']))
+            if not hasattr(self, 'I_b_n'):
+                self.I_b_n, self.m_CA3_n, self.CA3_act_n = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['CA3'], m_b)
+            self.I_b_o, self.m_CA3_o, self.CA3_act_o = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['CA3'], m_b, self.m_CA3)
+            
+            if not new_env:
+                self.I_b, self.m_CA3, self.CA3_act = self.I_b_o, self.m_CA3_o, self.CA3_act_o
+            else:
+                self.m_CA3 = self.m_CA3_o
+                self.CA3_act = (1-a)*self.CA3_act_o + a*self.CA3_act_n
+                self.I_b = lambda t: self.CA3_act[:, int(t/dt)]  
+
+            zero_top_down = np.zeros((int(round(tn/dt)+10), self.n_cells['pyramidal']))
+            
+            if top_down and new_env:
+                self.I_a, self.m_EC, _ = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['pyramidal'], m_a)
+            elif top_down:
+                self.I_a, self.m_EC, _ = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['pyramidal'], m_a, self.m_EC)
+            else: self.I_a = lambda t: zero_top_down[int(t/dt), :]   
+
+            self.run_one_epoch(t_per_epoch, plasticity=True)
+
+            full_spike_count[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.spike_count
+
+        return full_spike_count
 
 
     def plasticity_step(self): 
@@ -312,11 +361,8 @@ class PyramidalCells():
         mean_bursts = np.mean(last_bursts, axis=0)
  
         Ib_arr = np.array(self.Ib_trace)
-        mean_Ib = np.mean(Ib_arr, axis=0)
+        mean_Ib = np.mean(Ib_arr, axis=0)*50/self.n_cells['pyramidal']
 
-        alpha = 0.1
-
-        print(last_events.shape)
         self.trace_events.append(mean_events)
         self.trace_bursts.append(mean_bursts)
 
@@ -324,8 +370,9 @@ class PyramidalCells():
             self.trace_events.pop(0)
             self.trace_bursts.pop(0)
 
-        trace = np.array(self.trace_events).sum(axis=0) + 5*np.array(self.trace_bursts).sum(axis=0)
-        delta_W = self.eta * (np.outer(mean_bursts + 0.1*(mean_events-self.C*trace), mean_Ib)) 
+        # trace = np.array(self.trace_events).sum(axis=0) + 5*np.array(self.trace_bursts).sum(axis=0)
+        # delta_W = self.eta * (np.outer(mean_bursts + self.alpha*(mean_events-self.C*trace), mean_Ib)) 
+        delta_W = self.eta * (np.outer(mean_bursts + self.alpha*(mean_events), mean_Ib)) 
         
         self.W_CA3 += delta_W    
         if np.sum(self.W_CA3) != 0:       

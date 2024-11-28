@@ -43,8 +43,6 @@ def simulate_run(len_track = 200, n_runs = 20, av_running_speed = 20, dt = 0.01,
 
     return t, x
     
-import matplotlib.pyplot as plt
-
 
 def custom_plot(ax=None, x_data=None, y_data=None, title="My Plot", xlabel="X-Axis", ylabel="Y-Axis", label = None):
     # If no Axes object is provided, create a new figure and axes
@@ -108,7 +106,6 @@ def plot_firing_rates(fig, ax, firing_rates, m_EC, out):
     sort_TD = np.argsort(m_EC)
     sorted_fr = firing_rates[np.ix_(sort_TD, np.arange(firing_rates.shape[1]))]
 
-    ###### FOR NOW SINCE RETRIEVAL IS ONLY ONE WAY FORWARD AND ONE WAY BACK, I CAN JUST SPLIT IN MIDDLE AND MEAN. 
     ###### IDEALLY I WOULD SOMEHOW PUT IT IN BINS ACCORDING TO POSITION AND THEN MEAN OVER THAT
 
     lap = sorted_fr.shape[1] // 16
@@ -265,8 +262,8 @@ def main():
     n_pyr = 50
     t_epoch = 0.5
     speed = 20
-    tau_bs = [0.15]
-    I_as = [9]
+    tau_bs = [0.125]
+    I_as = [8]
 
     run_for_speed(av_running_speed = speed, tau_bs=tau_bs, t_epoch = t_epoch, out_folder = 'adapt_speed', I_as = I_as) 
 
@@ -314,7 +311,8 @@ def param_tuning(lr, v_th, tau, t_run, x_run, t_epoch, tn, n_cells, out_folder =
     pyramidal.pa = {"E_L": -65, "R": 10, "v_th": v_th, "tau": tau} 
     pyramidal.pb['tau'] = tau_b
 
-    pyramidal.ma_pc, pyramidal.mb_pc = I_a, 30.77*I_a
+    pyramidal.ma_pc, pyramidal.mb_pc = I_a, 2*30.77*I_a
+    pyramidal.alpha = 0.1
     pyramidal.learn_place_cells(t_run[0], x_run[0], t_epoch)
 
     
