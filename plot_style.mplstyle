@@ -1,2 +1,2 @@
-axes.spines.top: False
-axes.spines.right: False
+axes.spines.top: True
+axes.spines.right: True
