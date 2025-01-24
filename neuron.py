@@ -7,7 +7,6 @@ plt.style.use('./plot_style.mplstyle')
 import csv
 
 
-
 def runge_kutta(t_values, y_values, f, dt):
     t = t_values[-1]
     y = y_values[-1]
@@ -24,6 +23,9 @@ def runge_kutta(t_values, y_values, f, dt):
 def sigmoid(x, x0, k):
     y = 1 / (1 + np.exp(-k*(x-x0)))
     return y
+
+### TODO: I think at some point I want to combine some of the functionality of retreiving and 
+###       learning into one function, for readability and to avoid code duplication
 
 
 class PyramidalCells():
@@ -77,10 +79,12 @@ class PyramidalCells():
         self.plast_count = 0
 
         self.dynamics_values = {
-            'v_b'   : (self.dynamics_basal,         [self.pb['E_L']]),
-            'v_a'   : (self.dynamics_apical,        [self.pa['E_L']]),
-            'v_i_a' : (self.dynamics_interneuron_a, [self.pi['E_L']]),  
-            'v_i_b' : (self.dynamics_interneuron_b, [self.pi['E_L']]),
+            'v_b'    : (self.dynamics_basal,         [np.ones(n_cells['pyramidal'])*self.pb['E_L']]),
+            'v_a'    : (self.dynamics_apical,        [np.ones(n_cells['pyramidal'])*self.pa['E_L']]),
+            'v_i_a'  : (self.dynamics_interneuron_a, [np.ones(n_cells['inter_a'])*self.pi['E_L']]),  
+            'v_i_b'  : (self.dynamics_interneuron_b, [np.ones(n_cells['inter_b'])*self.pi['E_L']]),
+            'x_b'    : (self.synaptic_trace_pyr,     [np.zeros(n_cells['pyramidal'])]),
+            'x_int_b': (self.synaptic_trace_ib,      [np.zeros(n_cells['inter_b'])]),
             }
         
         self.v0 = np.array([self.pb['E_L'], self.pa['E_L'], self.pi['E_L'], self.pi['E_L']])
@@ -95,9 +99,10 @@ class PyramidalCells():
         self.burst_collector = []
 
         self.all_CA3_activities = np.zeros((n_cells['CA3'], (int(1000/dt))))
-        self.epsilon = 0.01 # 1 
-        self.cutoff = 0
-        self.sigmoid_params = {'a': 0.01, 'k': 0.00001, 'x0': 0.005}
+        
+        self.rho_0_spikes = 15 # 15 Hz target spike rate
+        self.tau_stdp = 2
+        self.lr_i_b = 0.5
         
         
     def dynamics_basal(self, t, v):
@@ -123,46 +128,17 @@ class PyramidalCells():
         v_dot = 1/tau_i * (E_L_i - v + R_i * self.W_ip_b @ self.spiking + np.random.normal(0, 2, self.n_cells['inter_b']))
         return v_dot
     
-    
-    def create_I_CA3(self, pattern, tn):
-        dt = self.dt
-    
-        m_b = 8*self.n_cells['pyramidal']
-        sigma = 2*6.5/1000
-        I = np.zeros((int(tn/dt + 10), self.n_cells['CA3'])) # +10 to avoid index out of bounds
 
-        for i in range(int(tn/dt + 10)):
-            I[i, :] = m_b*pattern + np.random.normal(0, sigma, self.n_cells['CA3']) # sqrt(sigma) i had before
-
-        self.I_b = lambda t: I[int(t/dt), :] 
-
-
-    def create_I_EC(self, pattern, tn):
-        dt = self.dt
-    
-        m_a = 6.5
-        sigma = 2*6.5/1000
-        I = np.zeros((int(tn/dt + 10), self.n_cells['pyramidal']))
-
-        for i in range(int(tn/dt + 10)):
-            I[i, :] = m_a*pattern + np.random.normal(0, sigma, self.n_cells['pyramidal']) 
-
-        self.I_a = lambda t: I[int(t/dt), :] 
+    def synaptic_trace_pyr(self, t, x):
+        # print(self.spiking)
+        x_dot = -x/self.tau_stdp + 1*self.spiking
+        return x_dot
     
 
-    def learn_patterns(self, patterns, top_down, n_presentations, t_per_pattern):
-        dt = self.dt
-        n_patterns = patterns.shape[1]
-        self.firing_rate_means = []
-        
-        for i in range(n_presentations):
-            for j in range(n_patterns):
-                self.spike_count = np.zeros((int(round(t_per_pattern / dt) + 5), self.n_cells['pyramidal']))
-                self.burst_count = np.zeros((int(round(t_per_pattern / dt) + 5), self.n_cells['pyramidal']))
-                self.create_I_CA3(patterns[:,j], t_per_pattern)
-                self.create_I_EC(top_down[:,j], t_per_pattern)
-                self.run_one_epoch(t_per_pattern)
-                self.firing_rate_means.append(self.spike_count.mean(axis=0).mean())
+    def synaptic_trace_ib(self, t, x):
+        # print(self.inter_spikes_b)
+        x_dot = -x/self.tau_stdp + 1*self.inter_spikes_b
+        return x_dot
             
 
     def learn_place_cells(self, t_run, x_run, t_per_epoch, top_down = True):
@@ -190,6 +166,8 @@ class PyramidalCells():
 
             self.spike_count = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['pyramidal']))
             self.burst_count = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['pyramidal']))
+            self.spike_count_int_a = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['inter_a']))
+            self.spike_count_int_b = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['inter_b']))
 
             x = x_run[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt)]
 
@@ -280,10 +258,12 @@ class PyramidalCells():
             values_new['v_i_b'] = np.where(self.inter_spikes_b, self.pi['E_L'], values_new['v_i_b'])
             values_new['v_i_a'] = np.where(self.inter_spikes_a, self.pi['E_L'], values_new['v_i_a'])
             
-            [values[i].append(values_new[i]) for i in ['v_a', 'v_b', 'v_i_a', 'v_i_b']]
+            [values[i].append(values_new[i]) for i in list(self.dynamics_values.keys())]
 
             self.burst_count[t-1, :] = self.bursting
             self.spike_count[t-1, :] = self.spiking
+            self.spike_count_int_a[t-1, :] = self.inter_spikes_a
+            self.spike_count_int_b[t-1, :] = self.inter_spikes_b
 
             self.Ib_trace.append(self.I_b(t_new))
             self.t_values.append(t_new)
@@ -296,28 +276,7 @@ class PyramidalCells():
 
         self.burst_rate.append((self.burst_count.sum(axis = 0)/t_epoch).mean())
         self.spike_rate.append((self.spike_count.sum(axis = 0)/t_epoch).mean())
-    
 
-    def pattern_retrieval(self, patterns, top_down, t_per_pattern): 
-        dt = self.dt
-        self.cosine_distances = []
-        # self.firing_rate_means = []
-        
-        n_patterns = patterns.shape[1]
-        tn = n_patterns * t_per_pattern
-        
-        for j in range(n_patterns):
-            self.spike_count = np.zeros((int(round(t_per_pattern / dt)), self.n_cells['pyramidal']))
-            self.burst_count = np.zeros((int(round(t_per_pattern / dt)), self.n_cells['pyramidal']))
-            zero_top_down = np.zeros((int(t_per_pattern//dt + 10), self.n_cells['pyramidal']))
-            self.create_I_CA3(patterns[:,j], t_per_pattern)
-            self.I_a = lambda t: zero_top_down[int(t/dt), :]
-            self.run_one_epoch(t_per_pattern)
-            firing_rate = self.spike_count.mean(axis=0) 
-            cosine_distance = 1-cosine(firing_rate, top_down[:,j])
-            self.firing_rate_means.append(firing_rate.mean())
-            self.cosine_distances.append(cosine_distance)
-    
 
     def retrieve_place_cells(self, t_run, x_run, new_env = False, a = 0, t_per_epoch = None, top_down = False):
         dt = self.dt
@@ -338,6 +297,8 @@ class PyramidalCells():
             x = x_run[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt)]
             self.spike_count = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['pyramidal']))
             self.burst_count = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['pyramidal']))
+            self.spike_count_int_a = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['inter_a']))
+            self.spike_count_int_b = np.zeros((int(round(t_per_epoch / dt)), self.n_cells['inter_b']))
             if not hasattr(self, 'I_b_n'):
                 self.I_b_n, self.m_CA3_n, self.CA3_act_n = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['CA3'], m_b, self.p_active_CA3)
             self.I_b_o, self.m_CA3_o, self.CA3_act_o = self.create_activity_pc(x, len_track, t_per_epoch, self.n_cells['CA3'], m_b, self.p_active_CA3, self.m_CA3)
@@ -372,7 +333,24 @@ class PyramidalCells():
         last_bursts = self.burst_count
         mean_bursts = np.mean(last_bursts, axis=0)
 
- 
+        # self.spike_count_int_a
+        # self.spike_count_int_b
+
+
+        x_b = np.array(self.dynamics_values['x_b'][1])[-last_events.shape[0]:]
+        x_int_b = np.array(self.dynamics_values['x_int_b'][1])[-last_events.shape[0]:]
+        alpha_spikes = 2 * self.rho_0_spikes * self.tau_stdp
+
+        if self.plast_count % 100 == 0:
+            print(x_b, x_int_b)
+            print(x_b.shape, x_int_b.shape)
+
+
+        self.W_pi_b = self.W_pi_b + self.lr_i_b * (np.einsum('ij,ij->j', x_b, last_events)[:, np.newaxis])/x_b.shape[0]
+        self.W_pi_b = self.W_pi_b + self.lr_i_b * (np.einsum('ij,ij->j', x_int_b - alpha_spikes, self.spike_count_int_b)[np.newaxis, :])/x_b.shape[0]
+
+        # print(np.abs(np.abs(self.W_pi_b)))
+
         Ib_arr = np.array(self.Ib_trace)
         mean_Ib = np.mean(Ib_arr, axis=0)/(self.n_cells['pyramidal'] * self.p_active_EC) #*50
 
@@ -380,37 +358,10 @@ class PyramidalCells():
         self.trace_events.append(mean_events)
         self.trace_bursts.append(mean_bursts)
 
-
-        if len(self.trace_events) > 50:  ### TODO: maybe change this value
-
-            tr_ev = np.array(self.trace_events)
-           
-            n_active = np.sum(np.sum(tr_ev, axis=0) > 0)
-            print(n_active, self.p_active_EC*self.n_cells['pyramidal'])
-            self.trace_events = []
-            self.W_ip_b = self.W_ip_b + self.epsilon * (n_active - self.p_active_EC*self.n_cells['pyramidal']) 
-            # self.W_pi_b = self.W_pi_b + self.epsilon * (n_active - self.p_active_EC*self.n_cells['pyramidal'])
-
-            
-        # trace = np.array(self.trace_events).sum(axis=0) + 5*np.array(self.trace_bursts).sum(axis=0)
-        # delta_W = self.eta * (np.outer(mean_bursts + self.alpha*(mean_events-self.C*trace), mean_Ib)) 
         non_0 = mean_bursts[np.where(mean_bursts > 0)]
-        # if len(non_0) > 0:
-        #     print(non_0.mean(), non_0.min(), non_0.max())
+
         self.burst_collector.extend(list(non_0))
-        # mean_bursts = np.where(mean_bursts > self.cutoff, mean_bursts, 0)
-        # mean_bursts = sigmoid(mean_bursts, **self.sigmoid_params)
 
-        ## TODO: USe sigmoid instead of cutof
-        # non_0 = mean_bursts[np.where(mean_bursts > 0)]
-        # if len(non_0) > 0:
-        #     print(non_0.mean(), non_0.min(), non_0.max())
-        #     print('\n')
-
-        # mean_bursts_non_zero = mean_bursts[mean_bursts > 0]
-        # self.burst_collector.extend(mean_bursts_non_zero)
-        # mean_bursts = 0.006*sigmoid(mean_bursts, 0.003, 10000)
-        # print(mean_bursts, mean_events) # , mean_Ib)
         delta_W = self.eta * (np.outer(mean_bursts + self.alpha*(mean_events), mean_Ib)) 
         self.W_CA3 += delta_W    
 
@@ -422,10 +373,11 @@ class PyramidalCells():
             print('Weights are zero')
             print(delta_W, self.W_CA3)
             quit()
-        # print('Plasticity', self.plast_count, np.sum(delta_W)/self.p_active_EC**2)
 
         self.Ib_trace = []
         self.plast_count += 1
+
+        print('Plasticity step:', self.plast_count)
 
 
 def sigmoid(x, a=1, k=1, x0=0):
