@@ -35,7 +35,8 @@ class PyramidalCells():
             n_cells,
             len_edge,
             learning_rate = 0.05,
-            dt = 0.01
+            dt = 0.01,
+            seed = None
             ): 
         
         self.dt = dt
@@ -80,7 +81,7 @@ class PyramidalCells():
         step_CA3 = int(np.sqrt(n_cells['CA3']))*1j
         step_EC = int(np.sqrt(n_cells['pyramidal']))*1j
 
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(seed=seed)
 
         m_CA3_x, m_CA3_y = np.mgrid[left:right:step_CA3, left:right:step_CA3]
         self.m_CA3 = np.vstack((m_CA3_x.flatten(), m_CA3_y.flatten()))
@@ -120,7 +121,7 @@ class PyramidalCells():
     
 
     def learn_place_cells(self, t_run, x_run, t_per_epoch, top_down = True, len_track = None, plasiticty = True):
-        return self.retrieve_place_cells(self, t_run, x_run, t_per_epoch=t_per_epoch, top_down=top_down, plasticity=plasiticty)
+        return self.retrieve_place_cells(t_run, x_run, t_per_epoch=t_per_epoch, top_down=top_down, plasticity=plasiticty)
 
 
     def create_activity_pc(self, x, len_track, n_cells, m, new_env, m_cells, m_cells_new, a): 
@@ -220,6 +221,7 @@ class PyramidalCells():
             full_burst_count[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.burst_count
             self.full_CA3_activities[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.I_b.T[:int(t_per_epoch/dt), :]
             self.full_EC_activities[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.I_a.T[:int(t_per_epoch/dt), :]
+
 
         return full_spike_count, full_burst_count
 

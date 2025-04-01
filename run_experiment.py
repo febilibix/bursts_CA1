@@ -8,6 +8,7 @@ from itertools import product
 from scipy.ndimage import gaussian_filter
 import csv
 import warnings
+import pickle
 
 
 ENVIRONMENTS_RUNS = {
@@ -352,15 +353,16 @@ def plot_smooth_activity_map(cell_idx, act_maps, all_pos_bins, condition, m_EC_o
 
 
 
-def run_simulation(alpha = 0.05, plot_burst = False):
-    lr = 10
+def run_simulation(alpha, a, lr, plot_burst = False):
+    lr = 20 # 10
     t_epoch = 1
     speed = 30
     len_edge = 20
     dt = 0.001
     tn = 200 # 350
-    a = 0.3 # similarity between environments
+    # a = 0.3 # similarity between environments
     n_cells = {'pyramidal' : 400, 'inter_a' : 40, 'inter_b' : 40, 'CA3' : 225}
+    seed = 98
 
     all_runs = {}
 
@@ -371,83 +373,88 @@ def run_simulation(alpha = 0.05, plot_burst = False):
     for condition in ['exp', 
                       'cont'
                       ]:
-        np.random.seed(1903)
+        np.random.seed(seed)
 
-        pyramidal = PyramidalCells(n_cells, len_edge = len_edge, learning_rate = lr, dt = dt)
-        m_EC_orig, m_CA3_orig = pyramidal.m_EC, pyramidal.m_CA3
-        m_EC_new, m_CA3_new = pyramidal.m_EC_new, pyramidal.m_CA3_new
+        pyramidal = PyramidalCells(n_cells, len_edge = len_edge, learning_rate = lr, dt = dt, seed = seed)
+        # m_EC_orig, m_CA3_orig = pyramidal.m_EC, pyramidal.m_CA3
+        # m_EC_new, m_CA3_new = pyramidal.m_EC_new, pyramidal.m_CA3_new
 
         pyramidal.alpha = alpha
 
         act_maps = {}
         ca3_act_maps = {}
         burst_rates = {}
+        firing_rates = {}
         all_pos_bins = {}
+        burst_counts, event_counts = {}, {}
 
         for out, params in ENVIRONMENTS_RUNS.items():
             print(f"Running {out} {condition}...")
             
             if condition == 'cont':
-                params['top_down'] = True
-
-            print(params)
-            
+                params['top_down'] = True            
 
             t_run, x_run = all_runs[out]
             
-            # TODO: STH MUST BE OFF SOMEWHERE, THERE IS REMAPiPING IN N1 IN EXP CONDITION
             event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, **params, a = a, t_per_epoch=t_epoch)
-
-            print(np.all(m_EC_new == pyramidal.m_EC_new), np.all(m_EC_orig == pyramidal.m_EC))
 
             fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
             br, _ = get_firing_rates(pyramidal, burst_count, x_run, n_bins = 128)
+            fr_short, _ = get_firing_rates(pyramidal, event_count, x_run, n_bins = 128)
             
             act_map, pos_bins = get_activation_map(fr, len_edge, x_run_reshaped)
             ca3_act_maps[out], _ = get_activation_map(pyramidal.full_CA3_activities.T, len_edge, x_run)
 
-            if out == 'F1':
-                plot_2d_run(t_run, x_run)
-                plot_example(207, fr, br, tn, act_map, pos_bins, x_run_reshaped)
+            # if out == 'F1':
+            #     plot_2d_run(t_run, x_run)
+            #     plot_example(207, fr, br, tn, act_map, pos_bins, x_run_reshaped)
             
             # print(np.isnan(act_map), np.isnan(act_map).sum(), act_map.shape)
             act_maps[out] = act_map
             burst_rates[out] = br
+            firing_rates[out] = fr_short
             all_pos_bins[out] = pos_bins
 
-        pos = np.random.randint(0, 400)
+            burst_counts[out] = burst_count
+            event_counts[out] = event_count
 
-        plot_smooth_activity_map(pos, act_maps, all_pos_bins, condition, m_EC_orig, m_EC_new)
-        
-        plot_smooth_activity_map(296, act_maps, all_pos_bins, condition, m_EC_orig, m_EC_new)
 
-        print(np.isnan(act_maps['F2']).sum(), np.isnan(act_maps['F3']).sum(), np.isnan(act_maps['N1']).sum(), np.isnan(act_maps['N2']).sum())
-        mean_cor_F = cor_act_maps(act_maps, 'F2', 'F3')
-        mean_cor_N = cor_act_maps(act_maps, 'N1', 'N2')
-        mean_cor_T = cor_act_maps(act_maps, 'F2', 'N1')
-        mean_cor_CA3 = cor_act_maps(ca3_act_maps, 'F2', 'N2')
+        # pos = np.random.randint(0, 400)
+        # 
+        # plot_smooth_activity_map(pos, act_maps, all_pos_bins, condition, m_EC_orig, m_EC_new)
+        # plot_smooth_activity_map(296, act_maps, all_pos_bins, condition, m_EC_orig, m_EC_new)
 
-        for k, v in act_maps.items():
-            print(k, np.all(v == 0, axis = 1).sum())
-        
-        print(condition)
-        print(f"Mean correlation between F2 and F3: {mean_cor_F}")
-        print(f"Mean correlation between N1 and N2: {mean_cor_N}")
-        print(f"Mean correlation between F2 and N1: {mean_cor_T}")
-        print('Baseline Correlation CA3: ', mean_cor_CA3)
-        
-        with open(f'plots/full_experiment/2d_case/correlations.csv', 'a') as f:
-            writer = csv.writer(f)
-            writer.writerow([condition, mean_cor_F, mean_cor_N, mean_cor_T, mean_cor_CA3])
-            
-        if plot_burst:
-            plot_burst_rates(burst_rates, tn, condition)
+        with open(f'plots/full_experiment/2d_case/act_maps_{condition}.pkl', 'wb') as f:
+            pickle.dump((act_maps, all_pos_bins, burst_counts, event_counts), f)
+
+        # print(np.isnan(act_maps['F2']).sum(), np.isnan(act_maps['F3']).sum(), np.isnan(act_maps['N1']).sum(), np.isnan(act_maps['N2']).sum())
+        # mean_cor_F = cor_act_maps(act_maps, 'F2', 'F3')
+        # mean_cor_N = cor_act_maps(act_maps, 'N1', 'N2')
+        # mean_cor_T = cor_act_maps(act_maps, 'F2', 'N1')
+        # mean_cor_T2 = cor_act_maps(act_maps, 'F2', 'N2')
+        # mean_cor_CA3 = cor_act_maps(ca3_act_maps, 'F2', 'N2')
+        # 
+        # for k, v in act_maps.items():
+        #     print(k, np.all(v == 0, axis = 1).sum())
+        # 
+        # print(condition)
+        # print(f"Mean correlation between F2 and F3: {mean_cor_F}")
+        # print(f"Mean correlation between N1 and N2: {mean_cor_N}")
+        # print(f"Mean correlation between F2 and N1: {mean_cor_T}")
+        # print(f"Mean correlation between F2 and N2: {mean_cor_T2}")
+        # print('Baseline Correlation CA3:', mean_cor_CA3)
+        # 
+        # with open(f'plots/full_experiment/2d_case/correlations.csv', 'a') as f:
+        #     writer = csv.writer(f)
+        #     writer.writerow([condition, mean_cor_F, mean_cor_N, mean_cor_T, mean_cor_CA3])
+        #     
+        # if plot_burst:
+        #     plot_burst_rates(burst_rates, tn, condition)
 
 
 def main():
 
-    np.random.seed(1903)
-    alpha = 0.0025
+    alpha = 0.002 # 0.0025
     run_simulation(alpha, plot_burst = True)
 
 
