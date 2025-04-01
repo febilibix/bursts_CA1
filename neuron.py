@@ -33,7 +33,8 @@ class PyramidalCells():
             n_cells,
             len_track,
             learning_rate = 0.05,
-            dt = 0.01
+            dt = 0.01,
+            n_env = 2,
             ): 
         
         self.dt = dt
@@ -73,12 +74,22 @@ class PyramidalCells():
         self.ma_pc, self.mb_pc = 40, 32
         self.all_CA3_activities = np.zeros((n_cells['CA3'], (int(1000/dt))))
 
-        self.m_CA3 = np.linspace(-len_track/10, len_track + len_track/10, self.n_cells['CA3'])
-        self.m_CA3_new = np.linspace(-len_track/10, len_track + len_track/10, self.n_cells['CA3'])
-        np.random.shuffle(self.m_CA3_new)
-        self.m_EC = np.linspace(0, len_track, self.n_cells['pyramidal'])
-        self.m_EC_new = np.linspace(0, len_track, self.n_cells['pyramidal'])
-        np.random.shuffle(self.m_EC_new)
+        # TODO: Will I need to use rng here like in 2D case? Apparently it's best practice in numpy for some reason
+
+        self.all_m_CA3 = []
+        for i in range(n_env):
+            self.all_m_CA3.append(np.linspace(-len_track/10, len_track + len_track/10, n_cells['CA3']))
+            np.random.shuffle(self.all_m_CA3[-1])
+
+
+        self.all_m_EC = []
+        for i in range(n_env):
+            self.all_m_EC.append(np.linspace(0, len_track, n_cells['pyramidal']))
+            np.random.shuffle(self.all_m_EC[-1])
+        
+        # TODO: This should catch old code for now 
+        self.m_CA3, self.m_CA3_new = self.all_m_CA3[0], self.all_m_CA3[1]
+        self.m_EC, self.m_EC_new = self.all_m_EC[0], self.all_m_EC[1]
 
         
     def dynamics_basal(self, t, v):
@@ -106,13 +117,13 @@ class PyramidalCells():
     
 
     def learn_place_cells(self, t_run, x_run, t_per_epoch, top_down = True, len_track = None, plasiticty = True):
-        return self.retrieve_place_cells(self, t_run, x_run, t_per_epoch=t_per_epoch, top_down=top_down, plasticity=plasiticty)
+        return self.retrieve_place_cells(t_run, x_run, t_per_epoch=t_per_epoch, top_down=top_down, plasticity=plasiticty)
 
 
-    def create_activity_pc(self, x, len_track, n_cells, m, new_env, m_cells, m_cells_new, a): 
+    def create_activity_pc(self, x, len_track, n_cells, m, m_cells, m_cells_new, a): 
         sigma_pf = len_track/16 # len_track/8
         n_active = int(n_cells) 
-        a = a if new_env else 1
+        # a = a if new_env else 1
         
         activity = np.zeros((n_active, x.shape[0] + 5))
         activity[:, :-5] = m * ((1-a) * gauss(x, m_cells_new, sigma_pf) + a * gauss(x, m_cells, sigma_pf))
@@ -189,10 +200,10 @@ class PyramidalCells():
 
             x = x_run[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt)]
 
-            self.I_b = self.create_activity_pc(x, len_track, self.n_cells['CA3'], m_b, new_env, self.m_CA3, self.m_CA3_new, a)
+            self.I_b = self.create_activity_pc(x, len_track, self.n_cells['CA3'], m_b, self.m_CA3, self.all_m_CA3[int(new_env)], a)
             
             if top_down:
-                self.I_a = self.create_activity_pc(x, len_track, self.n_cells['pyramidal'], m_a, new_env, self.m_EC, self.m_EC_new, a = 0)
+                self.I_a = self.create_activity_pc(x, len_track, self.n_cells['pyramidal'], m_a, self.m_EC, self.all_m_EC[int(new_env)], a=0)
             else: 
                 self.I_a = np.zeros((self.n_cells['pyramidal'], int(t_per_epoch/dt+5))) 
 
