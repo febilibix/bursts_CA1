@@ -21,6 +21,8 @@ ENVIRONMENTS_RUNS_CONTROL = {
    
     "F2": {'new_env': False, 'top_down': True},
     "N1": {'new_env': True,  'top_down': True},
+    "F3": {'new_env': False, 'top_down': True}, 
+    "N2": {'new_env': True,  'top_down': True},
     
     }
 
@@ -111,7 +113,127 @@ def cor_act_maps(act_map1, act_map2):
 
 
 def run_simulation(alpha = 0.05, plot_burst = False):
-    lr = 10
+    lr = 15
+    t_epoch = 1
+    speed = 20
+    len_track = 100. 
+    dt = 0.001
+    tn = len_track/speed*32
+    a = 0.3 # similarity between environments
+    n_cells = {'pyramidal' : 200, 'inter_a' : 20, 'inter_b' : 20, 'CA3' : 120}
+    cutoff = 0.004
+
+    for condition in ['exp',
+                      #  'control'
+                      ]:
+
+    #### TODO: Loop here over exp, control condition and for control just keep top down on but go through all 4 phases
+
+        pyramidal = PyramidalCells(n_cells, len_track = len_track, learning_rate = lr, dt = dt)
+        pyramidal.W_ip_a = pyramidal.W_ip_a
+        pyramidal.alpha = alpha
+
+        t_run, x_run = simulate_run(len_track, speed, dt, tn)
+
+
+        fig, axs = plt.subplots(2, 2, figsize=(12, 12))
+        figb, axsb = plt.subplots(2, 2, figsize=(12, 12))
+        axsb = axsb.flatten()
+        axs = axs.flatten()
+        print('F1')
+        event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, t_per_epoch=t_epoch, top_down=True)
+        fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
+        m_EC_orig, m_CA3_orig = pyramidal.m_EC, pyramidal.m_CA3
+        # burst_collectors = {'F1': pyramidal.burst_collector}
+        # pyramidal.burst_collector = []
+        br, _ = get_firing_rates(pyramidal, burst_count, x_run)
+        # pyramidal = plot_burst_collector(pyramidal, 'F1')
+        activation_maps = {}
+        burst_rates = {'F1': br}
+
+        EC_act_maps = {}
+        ca3_act_maps = {}
+
+    
+
+        for i, (out, params_orig) in enumerate(ENVIRONMENTS_RUNS.items()):
+            print(out)
+            params = params_orig.copy()
+            if condition == 'control':
+                params['top_down'] = True
+
+            event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, **params, a = a, t_per_epoch=t_epoch)
+            # burst_collectors[out] = pyramidal.burst_collector
+            pyramidal.burst_collector = []
+            fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
+            br, _ = get_firing_rates(pyramidal, burst_count, x_run)
+            mean_firing_rates = get_activation_map(fr, m_EC_orig, x_run_reshaped)
+            mean_burst_rates = get_activation_map(br, m_EC_orig, x_run_reshaped)
+
+            ca3_act_maps[out] = get_activation_map(pyramidal.full_CA3_activities.T, m_CA3_orig, x_run)
+            EC_act_maps[out] = get_activation_map(pyramidal.full_EC_activities.T, m_EC_orig, x_run)
+            activation_maps[out] = mean_firing_rates
+            burst_rates[out] = br
+            fig, axs[i] = plot_firing_rates(fig, axs[i], mean_firing_rates, out)
+            figb, axsb[i] = plot_firing_rates(figb, axsb[i], mean_burst_rates, out)
+            # pyramidal = plot_burst_collector(pyramidal, out)
+
+        mean_cor_F = cor_act_maps(activation_maps['F2'], activation_maps['F3'])
+        mean_cor_N = cor_act_maps(activation_maps['F2'], activation_maps['N2'])
+        mean_cor_T = cor_act_maps(activation_maps['F2'], activation_maps['N1'])
+        mean_cor_CA3 = cor_act_maps(ca3_act_maps['F2'], ca3_act_maps['N1'])
+
+        print(f"Mean correlation between F2 and F3: {mean_cor_F}")
+        print(f"Mean correlation between F2 and N2: {mean_cor_N}")
+        print(f"Mean correlation between F2 and N1: {mean_cor_T}")
+        
+        print('Baseline Correlation CA3: ', mean_cor_CA3)
+
+        with open(f'plots/full_experiment/cors_per_cutoff.csv', mode='a') as file:
+            writer = csv.writer(file)
+            writer.writerow([condition, mean_cor_F, mean_cor_N, mean_cor_T])
+
+        plt.tight_layout()
+        fig.savefig(f"plots/full_experiment/firing_rates_CA1_{condition}.png")
+        plt.close(fig)
+        
+        plt.tight_layout()
+        figb.savefig(f"plots/full_experiment/burst_rates_CA1_{condition}.png")
+        plt.close(figb)
+
+        fig, ax = plt.subplots(2, 2, figsize=(12, 12))
+        ax = ax.flatten()
+        for i, (out, act_map) in enumerate(ca3_act_maps.items()):
+            im = ax[i].imshow(act_map, aspect='auto', origin='lower')
+            fig.colorbar(im, ax=ax[i])
+            ax[i].set_title(f'CA3 {out}')
+        plt.tight_layout()
+        fig.savefig(f"plots/full_experiment/CA3_activities_{condition}.png")
+        plt.close(fig)
+
+        fig, ax = plt.subplots(2, 2, figsize=(12, 12))
+        ax = ax.flatten()
+        for i, (out, act_map) in enumerate(EC_act_maps.items()):
+            im = ax[i].imshow(act_map, aspect='auto', origin='lower')
+            fig.colorbar(im, ax=ax[i])
+            ax[i].set_title(f'EC {out}')
+        plt.tight_layout()
+        fig.savefig(f"plots/full_experiment/EC_activities_{condition}.png")
+        plt.close(fig)
+
+
+        if plot_burst:
+            plot_burst_rates(burst_rates, tn, condition)
+            # plot_burst_collector(burst_collectors, sigmoid_params)
+
+    return mean_cor_F, mean_cor_N, mean_cor_T
+
+
+
+
+def run_simulation_control(alpha = 0.05, plot_burst = False):
+    print('Running control condition')
+    lr = 15
     t_epoch = 1
     speed = 20
     len_track = 100. 
@@ -122,14 +244,10 @@ def run_simulation(alpha = 0.05, plot_burst = False):
     cutoff = 0.004
 
 
-    #### TODO: Loop here over exp, control condition and for control just keep top down on but go through all 4 phases
-
-    pyramidal = PyramidalCells(n_cells, len_track = len_track, learning_rate = lr, dt = dt)
-    pyramidal.W_ip_a = pyramidal.W_ip_a
+    pyramidal = PyramidalCells(n_cells, len_track=len_track, learning_rate = lr, dt = dt)
     pyramidal.alpha = alpha
 
     t_run, x_run = simulate_run(len_track, speed, dt, tn)
-
 
     fig, axs = plt.subplots(2, 2, figsize=(12, 12))
     figb, axsb = plt.subplots(2, 2, figsize=(12, 12))
@@ -137,114 +255,6 @@ def run_simulation(alpha = 0.05, plot_burst = False):
     axs = axs.flatten()
     print('F1')
     event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, t_per_epoch=t_epoch, top_down=True)
-    fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
-    m_EC_orig, m_CA3_orig = pyramidal.m_EC, pyramidal.m_CA3
-    # burst_collectors = {'F1': pyramidal.burst_collector}
-    # pyramidal.burst_collector = []
-    br, _ = get_firing_rates(pyramidal, burst_count, x_run)
-    # pyramidal = plot_burst_collector(pyramidal, 'F1')
-    activation_maps = {}
-    burst_rates = {'F1': br}
-
-    EC_act_maps = {}
-    ca3_act_maps = {}
-
-    for i, (out, params) in enumerate(ENVIRONMENTS_RUNS.items()):
-        print(out)
-        event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, **params, a = a, t_per_epoch=t_epoch)
-        # burst_collectors[out] = pyramidal.burst_collector
-        pyramidal.burst_collector = []
-        fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
-        br, _ = get_firing_rates(pyramidal, burst_count, x_run)
-        print(fr.shape, x_run_reshaped.shape)
-        mean_firing_rates = get_activation_map(fr, m_EC_orig, x_run_reshaped)
-        mean_burst_rates = get_activation_map(br, m_EC_orig, x_run_reshaped)
-
-        ca3_act_maps[out] = get_activation_map(pyramidal.full_CA3_activities.T, m_CA3_orig, x_run)
-        EC_act_maps[out] = get_activation_map(pyramidal.full_EC_activities.T, m_EC_orig, x_run)
-        activation_maps[out] = mean_firing_rates
-        burst_rates[out] = br
-        fig, axs[i] = plot_firing_rates(fig, axs[i], mean_firing_rates, out)
-        figb, axsb[i] = plot_firing_rates(figb, axsb[i], mean_burst_rates, out)
-        # pyramidal = plot_burst_collector(pyramidal, out)
-
-    mean_cor_F = cor_act_maps(activation_maps['F2'], activation_maps['F3'])
-    mean_cor_N = cor_act_maps(activation_maps['N1'], activation_maps['N2'])
-    mean_cor_T = cor_act_maps(activation_maps['F2'], activation_maps['N1'])
-    print('CA3:')
-    mean_cor_CA3 = cor_act_maps(ca3_act_maps['F2'], ca3_act_maps['N1'])
-
-    print(f"Mean correlation between F1 and F2: {mean_cor_F}")
-    print(f"Mean correlation between N1 and N2: {mean_cor_N}")
-    print(f"Mean correlation between F2 and N1: {mean_cor_T}")
-    
-    print('Baseline Correlation CA3: ', mean_cor_CA3)
-
-    with open(f'plots/full_experiment/cors_per_cutoff.csv', mode='a') as file:
-        writer = csv.writer(file)
-        writer.writerow([cutoff, mean_cor_F, mean_cor_N, mean_cor_T])
-
-    plt.tight_layout()
-    fig.savefig(f"plots/full_experiment/firing_rates_CA1.png")
-    plt.close(fig)
-    
-    plt.tight_layout()
-    figb.savefig(f"plots/full_experiment/burst_rates_CA1.png")
-    plt.close(figb)
-
-    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
-    ax = ax.flatten()
-    for i, (out, act_map) in enumerate(ca3_act_maps.items()):
-        im = ax[i].imshow(act_map, aspect='auto', origin='lower')
-        fig.colorbar(im, ax=ax[i])
-        ax[i].set_title(f'CA3 {out}')
-    plt.tight_layout()
-    fig.savefig(f"plots/full_experiment/CA3_activities.png")
-    plt.close(fig)
-
-    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
-    ax = ax.flatten()
-    for i, (out, act_map) in enumerate(EC_act_maps.items()):
-        im = ax[i].imshow(act_map, aspect='auto', origin='lower')
-        fig.colorbar(im, ax=ax[i])
-        ax[i].set_title(f'EC {out}')
-    plt.tight_layout()
-    fig.savefig(f"plots/full_experiment/EC_activities.png")
-    plt.close(fig)
-
-
-    if plot_burst:
-        plot_burst_rates(burst_rates, tn)
-        # plot_burst_collector(burst_collectors, sigmoid_params)
-
-    return mean_cor_F, mean_cor_N, mean_cor_T
-
-
-
-
-def run_simulation_control(alpha = 0.05, plot_burst = False):
-    print('Running control condition')
-    lr = 10
-    t_epoch = 1
-    speed = 20
-    len_track = 100. 
-    dt = 0.001
-    tn = len_track/speed*32
-    a = 0.3 # 1 - similarity between environments
-    n_cells = {'pyramidal' : 200, 'inter_a' : 20, 'inter_b' : 20, 'CA3' : 120}
-    cutoff = 0.004
-
-    pyramidal = PyramidalCells(n_cells, len_track=len_track, learning_rate = lr, dt = dt)
-    pyramidal.alpha = alpha
-
-    t_run, x_run = simulate_run(len_track, speed, dt, tn)
-
-    fig, axs = plt.subplots(2, 1, figsize=(6, 12))
-    figb, axsb = plt.subplots(2, 1, figsize=(6, 12))
-    axsb = axsb.flatten()
-    axs = axs.flatten()
-    print('F1')
-    event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, t_per_epoch=t_epoch)
     fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
     m_EC_orig, m_CA3_orig = pyramidal.m_EC, pyramidal.m_CA3
     br, _ = get_firing_rates(pyramidal, burst_count, x_run)
@@ -273,9 +283,17 @@ def run_simulation_control(alpha = 0.05, plot_burst = False):
         figb, axsb[i] = plot_firing_rates(figb, axsb[i], mean_burst_rates, out)
         # pyramidal = plot_burst_collector(pyramidal, out)
 
+    
+    mean_cor_F = cor_act_maps(activation_maps['F2'], activation_maps['F3'])
+    mean_cor_N = cor_act_maps(activation_maps['F2'], activation_maps['N2'])
     mean_cor_T = cor_act_maps(activation_maps['F2'], activation_maps['N1'])
-    print('CA3:')
     mean_cor_CA3 = cor_act_maps(ca3_act_maps['F2'], ca3_act_maps['N1'])
+
+    print(f"Mean correlation between F2 and F3: {mean_cor_F}")
+    print(f"Mean correlation between F2 and N2: {mean_cor_N}")
+    print(f"Mean correlation between F2 and N1: {mean_cor_T}")
+    
+    print('Baseline Correlation CA3: ', mean_cor_CA3)
 
 
     print(f"Mean correlation between F2 and N1: {mean_cor_T}")
@@ -290,7 +308,7 @@ def run_simulation_control(alpha = 0.05, plot_burst = False):
     figb.savefig(f"plots/full_experiment/burst_rates_CA1_ctrl.png")
     plt.close(figb)
 
-    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+    fig, ax = plt.subplots(2, 2, figsize=(12, 6))
     ax = ax.flatten()
     for i, (out, act_map) in enumerate(ca3_act_maps.items()):
         im = ax[i].imshow(act_map, aspect='auto', origin='lower')
@@ -300,7 +318,7 @@ def run_simulation_control(alpha = 0.05, plot_burst = False):
     fig.savefig(f"plots/full_experiment/CA3_activities_ctrl.png")
     plt.close(fig)
 
-    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+    fig, ax = plt.subplots(2, 2, figsize=(12, 6))
     ax = ax.flatten()
     for i, (out, act_map) in enumerate(EC_act_maps.items()):
         im = ax[i].imshow(act_map, aspect='auto', origin='lower')
@@ -312,13 +330,13 @@ def run_simulation_control(alpha = 0.05, plot_burst = False):
 
 
     if plot_burst:
-        plot_burst_rates(burst_rates, tn, ctrl=True)
+        plot_burst_rates(burst_rates, tn, 'ctrl')
         # plot_burst_collector(burst_collectors, sigmoid_params)
 
     return mean_cor_T
 
 
-def plot_burst_rates(burst_rates, tn, ctrl = False):
+def plot_burst_rates(burst_rates, tn, condition):
     key = list(burst_rates.keys())[0]
     print(burst_rates[key].shape[1])
     t = np.arange(burst_rates[key].shape[1])*tn / (burst_rates[key].shape[1])
@@ -326,15 +344,14 @@ def plot_burst_rates(burst_rates, tn, ctrl = False):
     for label, br in burst_rates.items():
         plt.plot(t, br.mean(axis=0), label=label)
         
-        lower_bound = br.mean(axis=0) - br.std(axis=0)
-        upper_bound = br.mean(axis=0) + br.std(axis=0)
-        if label == 'N2':
-            plt.fill_between(t, lower_bound, upper_bound, alpha=0.2)
+        # lower_bound = br.mean(axis=0) - br.std(axis=0)
+        # upper_bound = br.mean(axis=0) + br.std(axis=0)
+        # if label == 'N2':
+        #     plt.fill_between(t, lower_bound, upper_bound, alpha=0.2)
     plt.legend(loc = 'upper right')
     plt.xlabel('Time (s)')
     plt.ylabel('Burst rate')
-    out = 'burst_rates_ctrl' if ctrl else 'burst_rates'
-    plt.savefig(f"plots/full_experiment/{out}.png")
+    plt.savefig(f"plots/full_experiment/burst_rates_{condition}.png")
     plt.close()
 
 
@@ -405,7 +422,7 @@ def main():
     # simulate_for_alphas()
     # plot_cors()
     np.random.seed(1903)
-    alpha = 0.0125
+    alpha = 0.025
     # run_simulation_control(alpha, plot_burst = True)
     run_simulation(alpha, plot_burst = True)
     test_activation_maps()
