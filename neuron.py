@@ -70,7 +70,7 @@ class PyramidalCells():
             'v_i_b'  : (self.dynamics_interneuron_b, [np.ones(n_cells['inter_b'])*self.pi['E_L']]),
             }
                 
-        self.alpha = 0.05
+        self.alpha = 0.2
         self.ma_pc, self.mb_pc = 40, 32
         self.all_CA3_activities = np.zeros((n_cells['CA3'], (int(1000/dt))))
 
