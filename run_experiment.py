@@ -94,7 +94,7 @@ def simulate_2d_run_old(len_edge=20, av_running_speed=20, dt=0.01, tn=1000):
 
 
 
-def simulate_2d_run(len_edge=20, av_running_speed=20, dt=0.01, tn=1000, a=np.pi/20):
+def simulate_2d_run(len_edge=20, av_running_speed=20, dt=0.01, tn=1000, a=np.pi/40):
     """
     Simulates a mouse moving in a 2D square environment with smooth, random changes in direction.
     The mouse updates its movement direction gradually and bounces off walls naturally.
@@ -109,17 +109,24 @@ def simulate_2d_run(len_edge=20, av_running_speed=20, dt=0.01, tn=1000, a=np.pi/
     
     for _ in range(total_time_steps):
         # Update direction with small random change
-        phi += np.random.uniform(-a, a)
+        phi += np.random.randn() * a  # Random change in direction
         
         # Compute new position based on speed and direction
         dx = np.cos(phi) * (av_running_speed + np.random.randn() * 3) * dt 
         dy = np.sin(phi) * (av_running_speed + np.random.randn() * 3) * dt 
         
         # Check for boundary conditions
-        if x + dx >= len_edge or x + dx <= 0:
-            phi = np.pi - phi  # Reflect angle horizontally
-        if y + dy >= len_edge or y + dy <= 0:
-            phi = -phi  # Reflect angle vertically
+        if x + dx >= len_edge:
+            x = x - len_edge + dx
+        elif x + dx <= 0:
+            x = x + len_edge + dx # 
+            # phi = np.pi - phi  # Reflect angle horizontally
+        if y + dy >= len_edge:
+            y = y - len_edge + dy
+        elif y + dy <= 0:
+            y = y + len_edge + dy
+            
+            # phi = -phi  # Reflect angle vertically
         
         # Update position
         x = np.clip(x + dx, 0, len_edge)
@@ -236,14 +243,34 @@ def plot_burst_rates(burst_rates, tn, condition):
     plt.close()
     
 
-def plot_2d_run(t_run, x_run):
+def plot_2d_run(t_run, x_run, out = ''):
     plt.figure()
     sc = plt.scatter(x_run[0,:], x_run[1,:], c=t_run, cmap='viridis', s=5, alpha=0.05)  # Use 'viridis' or another colormap
     plt.colorbar(sc, label='Time (s)') 
     plt.xlabel('X position')
     plt.ylabel('Y position')
     plt.title('2D Run')
-    plt.savefig('plots/full_experiment/2d_case/2d_run.png')
+
+
+    density = np.zeros((50,50))
+    for i in range(density.shape[0]):
+        for j in range(density.shape[1]):
+            
+            density[i,j] = x_run[:, ((x_run[0, :]-i)**2 + (x_run[1, :]-j)**2)**(1/2) < 2].shape[1]
+    # plt.imshow(density, cmap='hot', interpolation='nearest', origin='lower')
+
+   #  # Apply Gaussian smoothing to x_run
+   #  x_smooth = np.zeros_like(x_run)
+   #  x_smooth[0, :] = gaussian_filter(x_run[0, :], sigma=50)
+   #  x_smooth[1, :] = gaussian_filter(x_run[1, :], sigma=50)
+# 
+   #  # Create a 2D histogram of the smoothed positions
+   #  heatmap, xedges, yedges = np.histogram2d(x_smooth[0, :], x_smooth[1, :], bins=100, range=[[0, x_run.max()], [0, x_run.max()]])
+# 
+   #  # Plot the heatmap using imshow
+   #  plt.imshow(heatmap.T, origin='lower', extent=[0, x_run.max(), 0, x_run.max()], cmap='viridis', aspect='auto')
+    plt.colorbar(label='Density')
+    plt.savefig(f'plots/full_experiment/2d_case/2d_run_{out}.png')
 
 
 def plot_example(cell_idx, fr, br, tn, act_map, pos_bins, x_run_reshaped):
@@ -353,15 +380,18 @@ def plot_smooth_activity_map(cell_idx, act_maps, all_pos_bins, condition, m_EC_o
 
 
 
-def run_simulation(alpha, a, lr, plot_burst = False):
-    lr = 20 # 10
+
+
+def run_simulation(alpha, a, lr, ma_pc, mb_pc, W_ip_a, W_ip_b, tau_a, plot_burst = False):
+    # lr = 20 # 10
     t_epoch = 1
     speed = 30
-    len_edge = 20
+    len_edge = 50 # 50
     dt = 0.001
-    tn = 200 # 350
+    tn = 300 # 1000
     # a = 0.3 # similarity between environments
-    n_cells = {'pyramidal' : 400, 'inter_a' : 40, 'inter_b' : 40, 'CA3' : 225}
+    n_cells =  {'pyramidal' : 2500, 'inter_a' : 250, 'inter_b' : 250, 'CA3' : 1444} # {'pyramidal' : 900, 'inter_a' : 90, 'inter_b' : 90, 'CA3' : 484}
+    # 
     seed = 98
 
     all_runs = {}
@@ -369,6 +399,10 @@ def run_simulation(alpha, a, lr, plot_burst = False):
     for k in ENVIRONMENTS_RUNS.keys():
         t_run, x_run = simulate_2d_run(len_edge, speed, dt, tn)
         all_runs[k] = (t_run, x_run)
+
+        plot_2d_run(t_run, x_run, k)
+
+    outputs = {}
 
     for condition in ['exp', 
                       'cont'
@@ -380,43 +414,69 @@ def run_simulation(alpha, a, lr, plot_burst = False):
         # m_EC_new, m_CA3_new = pyramidal.m_EC_new, pyramidal.m_CA3_new
 
         pyramidal.alpha = alpha
+        pyramidal.ma_pc = ma_pc
+        pyramidal.mb_pc = mb_pc
+        pyramidal.W_ip_a = W_ip_a*np.ones((n_cells['inter_a'], n_cells['pyramidal']))/n_cells['pyramidal']
+        pyramidal.W_ip_b = W_ip_b*np.ones((n_cells['inter_b'], n_cells['pyramidal']))/n_cells['pyramidal']
+        pyramidal.pa['tau'] = tau_a
 
         act_maps = {}
         ca3_act_maps = {}
+        ec_act_maps = {}
         burst_rates = {}
         firing_rates = {}
         all_pos_bins = {}
         burst_counts, event_counts = {}, {}
 
-        for out, params in ENVIRONMENTS_RUNS.items():
+        for out in ENVIRONMENTS_RUNS.keys():
             print(f"Running {out} {condition}...")
+
+            params = ENVIRONMENTS_RUNS[out].copy()
             
             if condition == 'cont':
                 params['top_down'] = True            
 
             t_run, x_run = all_runs[out]
             
-            event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, **params, a = a, t_per_epoch=t_epoch)
+            event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, **params, a = a, t_per_epoch=t_epoch,
+                                                                      # plasticity=False #TODO : DELETE !!!!!!!!!
+                                                                      ) 
+            
+            # ca1_inputs = pyramidal.W_CA3 @ pyramidal.full_CA3_activities.T
+            # with open(f'data/ca1_inputs_no_plasticity.pkl', 'wb') as f:
+            #     pickle.dump((x_run, ca1_inputs), f)
+            # quit()
 
             fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
-            br, _ = get_firing_rates(pyramidal, burst_count, x_run, n_bins = 128)
-            fr_short, _ = get_firing_rates(pyramidal, event_count, x_run, n_bins = 128)
+            # br, _ = get_firing_rates(pyramidal, burst_count, x_run, n_bins = 128)
+            # fr_short, _ = get_firing_rates(pyramidal, event_count, x_run, n_bins = 128)
             
-            act_map, pos_bins = get_activation_map(fr, len_edge, x_run_reshaped)
-            ca3_act_maps[out], _ = get_activation_map(pyramidal.full_CA3_activities.T, len_edge, x_run)
+            act_map, _ = get_activation_map(fr, len_edge, x_run_reshaped)
+            # ec_act_maps[out], _ = get_activation_map(pyramidal.full_EC_activities.T, len_edge, x_run)
+            # ca3_act_maps[out], _ = get_activation_map(pyramidal.full_CA3_activities.T, len_edge, x_run)
 
             # if out == 'F1':
             #     plot_2d_run(t_run, x_run)
             #     plot_example(207, fr, br, tn, act_map, pos_bins, x_run_reshaped)
             
             # print(np.isnan(act_map), np.isnan(act_map).sum(), act_map.shape)
-            act_maps[out] = act_map
-            burst_rates[out] = br
-            firing_rates[out] = fr_short
-            all_pos_bins[out] = pos_bins
+            
+            # burst_rates[out] = br
+            # firing_rates[out] = fr_short
+            # all_pos_bins[out] = pos_bins
 
-            burst_counts[out] = burst_count
-            event_counts[out] = event_count
+            # act_maps[out] = act_map
+            # burst_counts[out] = burst_count
+            # event_counts[out] = event_count
+
+            burst_prop = burst_count.sum(axis = 0)/event_count.sum(axis = 0)
+
+            with open(f'data/act_maps_{condition}_{out}_{W_ip_a}.pkl', 'wb') as f:
+                pickle.dump((act_map, burst_prop), f)
+
+        # outputs[condition] = (act_maps, burst_counts, event_counts, ec_act_maps)
+
+        
 
 
         # pos = np.random.randint(0, 400)
@@ -424,8 +484,8 @@ def run_simulation(alpha, a, lr, plot_burst = False):
         # plot_smooth_activity_map(pos, act_maps, all_pos_bins, condition, m_EC_orig, m_EC_new)
         # plot_smooth_activity_map(296, act_maps, all_pos_bins, condition, m_EC_orig, m_EC_new)
 
-        with open(f'plots/full_experiment/2d_case/act_maps_{condition}.pkl', 'wb') as f:
-            pickle.dump((act_maps, all_pos_bins, burst_counts, event_counts), f)
+        # with open(f'plots/full_experiment/2d_case/act_maps_{condition}.pkl', 'wb') as f:
+        #     pickle.dump((act_maps, all_pos_bins, burst_counts, event_counts), f)
 
         # print(np.isnan(act_maps['F2']).sum(), np.isnan(act_maps['F3']).sum(), np.isnan(act_maps['N1']).sum(), np.isnan(act_maps['N2']).sum())
         # mean_cor_F = cor_act_maps(act_maps, 'F2', 'F3')
@@ -450,6 +510,8 @@ def run_simulation(alpha, a, lr, plot_burst = False):
         #     
         # if plot_burst:
         #     plot_burst_rates(burst_rates, tn, condition)
+
+    return outputs
 
 
 def main():

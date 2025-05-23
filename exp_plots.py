@@ -3,11 +3,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, zscore
 from scipy.signal import correlate2d
 from scipy.ndimage import gaussian_filter
 from run_experiment import run_simulation
-
+import multiprocessing as mp
+import os
+from itertools import product
 
 
 def cor_act_maps(act_map, out1, out2, pop_vec = False):
@@ -15,11 +17,39 @@ def cor_act_maps(act_map, out1, out2, pop_vec = False):
 
     if pop_vec:
         act_map1, act_map2 = act_map1.T, act_map2.T
+        act_map1 = zscore(act_map1, axis=0)
+        act_map2 = zscore(act_map2, axis=0)
+
+        # act_map1 = act_map1/np.sum(act_map1, axis=0)[np.newaxis, :]
+        # act_map2 = act_map2/np.sum(act_map2, axis=0)[np.newaxis, :]
+        # if np.any(np.isnan(act_map1_new)) or np.any(np.isnan(act_map1_new)):
+        #     print("NaN values found in act_map1 or act_map2")
+        #     print(out1, out2)
+        #     print(act_map1, act_map2)
+        #     quit()
+        #     print(act_map1, act_map2)
+        #     print(np.any(np.isnan(act_map1)), np.any(np.isnan(act_map2)))
+        #     print(np.all(np.isnan(act_map1)), np.all(np.isnan(act_map2)))
+        # 
+        #     cor = np.zeros(act_map1.shape[0])
+        # 
+        #     for i in range(act_map1.shape[0]):
+        #         cor[i] = pearsonr(act_map1[i, :], act_map2[i, :])[0]
+        #     
+        #     print(cor, np.mean(cor), np.std(cor))
+        #     quit()
+        
+        
 
     cor = np.zeros(act_map1.shape[0])
 
     for i in range(act_map1.shape[0]):
-        cor[i] = pearsonr(act_map1[i, :], act_map2[i, :])[0]
+        valid_idx = ~np.isnan(act_map1[i, :]) & ~np.isnan(act_map2[i, :])
+        if np.any(valid_idx):
+            cor[i] = pearsonr(act_map1[i, valid_idx], act_map2[i, valid_idx])[0]
+        else:
+            cor[i] = np.nan  # Handle case where all values are NaN
+        # cor[i] = pearsonr(act_map1[i, :], act_map2[i, :])[0]
        
     return cor
 
@@ -123,6 +153,10 @@ def plot_pv_corr_distributions(act_maps_exp, act_maps_cont, out1, out2, ax):
     pv_corr_exp = cor_act_maps(act_maps_exp, out1, out2, pop_vec=True)
     pv_corr_cont = cor_act_maps(act_maps_cont, out1, out2, pop_vec=True)
 
+    # if out1 == 'F2' and out2 == 'N1':
+    #     print(pv_corr_exp, pv_corr_cont)
+    #     quit()
+
     # fig, ax = plt.subplots(figsize=(3, 4))
 
     # Plot KDEs (smoothed histograms)
@@ -136,41 +170,40 @@ def plot_pv_corr_distributions(act_maps_exp, act_maps_cont, out1, out2, ax):
     # Labeling
     ax.set_xlabel('PV corr. coeff.')
     ax.set_ylabel('Frequency')
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 45)
+    # ax.set_xlim(-.2, 1)
+    # .set_ylim(0, 45)
     sns.despine()
     # plt.tight_layout()
     # plt.savefig(f'plots/full_experiment/2d_case/final_plots/pv_corr_distributions_test.png', dpi=300)
 
 
 
-def plot_delta_burst_barplot(burst_counts, event_counts, ax):
+def plot_delta_burst_barplot(burst_props, ax):
 
-    burst_count_exp, burst_count_cont = burst_counts
-    event_count_exp, event_count_cont = event_counts
+    burst_props_exp, burst_props_cont = burst_props
 
-    means1, means2 = [], []
-    sems1, sems2 = [], []
+    means2 = [] # , means1 = [], []
+    sems2 = [] #, sems1 = [], []
 
     for i, (out1, out2) in enumerate([('F1', 'F2'), ('F2', 'N1'), ('N1', 'N2')]):
 
 
-        diff_exp = get_diff_burst_prob(burst_count_exp, event_count_exp, out1, out2)
+        # diff_exp = get_diff_burst_prob(burst_props, out1, out2)
 
-        means1.append(np.mean(diff_exp))
-        sems1.append(np.std(diff_exp)) #/np.sqrt(len(diff_exp))) # TODO: OR SEM ??? : sems1.append(diff.std()/np.sqrt(len(diff)))
+        # means1.append(np.mean(diff_exp))
+        # sems1.append(np.std(diff_exp)) #/np.sqrt(len(diff_exp))) # TODO: OR SEM ??? : sems1.append(diff.std()/np.sqrt(len(diff)))
 
-        diff_cont = get_diff_burst_prob(burst_count_cont, event_count_cont, out1, out2)
+        diff_cont = get_diff_burst_prob(burst_props_cont, out1, out2)
         means2.append(np.mean(diff_cont))
-        sems2.append(np.std(diff_cont)) #/np.sqrt(len(diff_cont))) # TODO: OR SEM ??? : sems2.append(diff.std()/np.sqrt(len(diff)))
+        sems2.append(np.std(diff_cont)/np.sqrt(len(diff_cont))) # TODO: OR SEM ??? : sems2.append(diff.std()/np.sqrt(len(diff)))
 
 
-    n = len(means1)
+    n = len(means2)
     x = np.arange(n)
     width = 0.25
 
     # Plot bars
-    ax.errorbar(x - width/2, means1, yerr=sems1, fmt='o', color='green', label='Group 1', capsize=5)
+    # ax.errorbar(x - width/2, means1, yerr=sems1, fmt='o', color='green', label='Group 1', capsize=5)
     ax.errorbar(x + width/2, means2, yerr=sems2, fmt='o', color='black', label='Group 2', capsize=5)
 
     # Horizontal reference line
@@ -190,10 +223,58 @@ def plot_delta_burst_barplot(burst_counts, event_counts, ax):
     ax.set_xticklabels(custom_labels, rotation=45, ha='right')
 
 
-def plot_all(act_maps_exp, act_maps_cont, burst_counts, event_counts, alpha, a, lr):
+def extract_active_cells(act_maps_exp, act_maps_cont):
+
+    act_idxs, avg_acts = [], []
+
+    for act_maps in [act_maps_exp, act_maps_cont]:
+        all_trials = np.concatenate(list(act_maps.values()), axis=1)
+        avg_act = np.mean(all_trials, axis=1)
+        avg_acts.append(avg_act)
+        # active_cells = np.where(avg_act > np.percentile(avg_act, 90))[0]
+        act_idxs.append(np.argsort(-avg_act))
+
+    rank_a = {idx: rank for rank, idx in enumerate(act_idxs[0])}
+    rank_b = {idx: rank for rank, idx in enumerate(act_idxs[1])}
+
+    # Step 3: Combine ranks (sum or average)
+    all_indices = np.union1d(act_idxs[0], act_idxs[1])  # Unique indices
+    combined_ranks = [
+        (idx, rank_a.get(idx, len(avg_acts[0])) + rank_b.get(idx, len(avg_acts[1])))  # Default penalizes missing
+        for idx in all_indices
+    ]
+
+    # Step 4: Sort by combined rank (lower = better) and pick top 40
+    combined_ranks_sorted = sorted(combined_ranks, key=lambda x: x[1])
+    active_cells = [idx for idx, rank in combined_ranks_sorted[:40]]
+
+    for act_maps in [act_maps_exp, act_maps_cont]:
+        for key in act_maps.keys():
+            act_maps[key] = act_maps[key][active_cells, :]
+
+    return act_maps_exp, act_maps_cont
+
+
+def smooth_act_maps(act_maps_exp, act_maps_cont):
+    
+    for act_maps in [act_maps_exp, act_maps_cont]:
+        for key in act_maps.keys():
+            reshape_val = int(np.sqrt(act_maps[key].shape[1]))
+            act_maps[key] = act_maps[key].reshape(act_maps[key].shape[0], reshape_val, reshape_val)
+            act_maps[key] = gaussian_filter(act_maps[key], sigma=1.5)
+            act_maps[key] = act_maps[key].reshape(act_maps[key].shape[0], -1)
+    
+    return act_maps_exp, act_maps_cont
+
+
+def plot_all(act_maps_exp, act_maps_cont, burst_props, alpha, a, lr, ma_pc, mb_pc, W_ip_a, W_ip_b, tau_a):
 
     fig, axes = plt.subplots(3, 5, figsize=(20, 12))
-    fig.suptitle(f'alpha = {alpha}, a = {a}, lr = {lr}', fontsize=16, fontweight='bold')
+    fig.suptitle(f'alpha = {alpha}, a = {a}, lr = {lr}, m_a = {ma_pc}, m_b = {mb_pc}, W_ip_a = {W_ip_a}', fontsize=16, fontweight='bold')
+
+    act_maps_exp, act_maps_cont = extract_active_cells(act_maps_exp, act_maps_cont) 
+
+    act_maps_exp, act_maps_cont = smooth_act_maps(act_maps_exp, act_maps_cont)
 
     for i, (out1, out2) in enumerate([('F1', 'F2'), ('F2', 'N1'), ('N1', 'N2')]):
         axs = axes[i, :]
@@ -207,35 +288,130 @@ def plot_all(act_maps_exp, act_maps_cont, burst_counts, event_counts, alpha, a, 
         create_raincloud_plot(act_maps_exp, act_maps_cont, out1, out2, ax=axs[2])
         plot_pv_corr_distributions(act_maps_exp, act_maps_cont, out1, out2, ax=axs[3])
 
-    plot_delta_burst_barplot(burst_counts, event_counts, axes[2,4])
+    # create_raincloud_plot(ec_act_maps_exp,ec_act_maps_cont, 'F2', 'N1', ax=axes[0,4])
+    # plot_pv_corr_distributions(ec_act_maps_exp, ec_act_maps_cont, 'F2', 'N1', ax=axes[1,4])
+
+    print(burst_props)
+    plot_delta_burst_barplot(burst_props, axes[2,4])
 
     plt.tight_layout()
-    plt.savefig(f'plots/full_experiment/2d_case/final_plots/all_in_one.png', dpi=300)
+    plt.savefig(f'plots/full_experiment/2d_case/final_plots/v37_all_in_one_alpha_{alpha}_a_{a}_lr_{lr}_ma_{ma_pc}_mb_{mb_pc}_W_ip_a_{W_ip_a}_W_ip_b_{W_ip_b}_tau_a_{tau_a}.png', dpi=300)
+    plt.close('all')
+
+    # if alpha == 0.1:
+    plot_single_maps(act_maps_exp, act_maps_cont)
 
 
-def get_diff_burst_prob(burst_count, event_count, out1, out2):
-    burst_prop1 = burst_count[out1].sum(axis = 0)/event_count[out1].sum(axis = 0)
-    burst_prop2 = burst_count[out2].sum(axis = 0)/event_count[out2].sum(axis = 0)
+def plot_single_maps(act_maps_exp, act_maps_cont):
+    for i in range(act_maps_exp['F1'].shape[0]):
+        fig = plt.figure(figsize=(12, 6))
+
+        # Left 2x2 block (Experimental)
+        left_gs = plt.GridSpec(2, 2, left=0.05, right=0.45, wspace=0.3, hspace=0.3)
+        ax1 = fig.add_subplot(left_gs[0, 0])
+        ax2 = fig.add_subplot(left_gs[0, 1])
+        ax3 = fig.add_subplot(left_gs[1, 0])
+        ax4 = fig.add_subplot(left_gs[1, 1])
+
+        # Right 2x2 block (Control)
+        right_gs = plt.GridSpec(2, 2, left=0.55, right=0.95, wspace=0.3, hspace=0.3)
+        ax5 = fig.add_subplot(right_gs[0, 0])
+        ax6 = fig.add_subplot(right_gs[0, 1])
+        ax7 = fig.add_subplot(right_gs[1, 0])
+        ax8 = fig.add_subplot(right_gs[1, 1])
+
+        axes1 = [ax1, ax2, ax3, ax4]  # Left block axes
+        axes2 = [ax5, ax6, ax7, ax8]  # Right block axes
+
+        # Add left/right titles
+        fig.text(0.25, 0.95, "Experimental Group", ha='center', fontsize=14, weight='bold')
+        fig.text(0.75, 0.95, "Control Group", ha='center', fontsize=14, weight='bold')
+
+        for j, act_maps in enumerate([act_maps_exp, act_maps_cont]):
+            axes = axes1 if j == 0 else axes2
+            for k, out in enumerate(['F2', 'N1', 'N2', 'F3']):
+                ax = axes[k]
+                act_map = act_maps[out][i, :].reshape(int(np.sqrt(act_maps[out].shape[1])), 
+                                             int(np.sqrt(act_maps[out].shape[1])))
+                
+                im = ax.imshow(act_map, cmap='jet', origin='lower')
+                
+                # Add colorbar (with adjusted padding)
+                cbar_ax = ax.inset_axes([1.05, 0, 0.05, 1])
+                fig.colorbar(im, cax=cbar_ax)
+                ax.set_title(out, fontsize=12)
+                ax.axis('off')
+
+
+        # Manually adjust layout to avoid colorbar overlap
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.85, bottom=0.1)
+        plt.savefig(f'plots/full_experiment/2d_case/final_plots/example_cells/cell_{i}.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+
+
+def get_diff_burst_prob(burst_props, out1, out2):
+    # burst_prop1 = burst_count[out1].sum(axis = 0)/event_count[out1].sum(axis = 0)
+    # burst_prop2 = burst_count[out2].sum(axis = 0)/event_count[out2].sum(axis = 0)
+    burst_prop1, burst_prop2 = burst_props[out1], burst_props[out2]
 
     # TODO: How to handle nan's?
     return np.where(burst_prop1 + burst_prop2 == 0, 0, (burst_prop2 - burst_prop1)/(burst_prop1 + burst_prop2))
 
-alphas = [0.001, 0.005, 0.01, 0.05]
-aas = [0.1, 0.2, 0.3, 0.4]
-lrs = [1, 5, 10, 20]
 
-for alpha in alphas:
-    for a in aas:
-        for lr in lrs:
+def run_single_experiment(params):
+    alpha, a, lr, ma_pc, mb_pc, W_ip_a, W_ip_b, tau_a = params
 
-            run_simulation(alpha, a, lr)
+    run_simulation(alpha, a, lr, ma_pc, mb_pc, W_ip_a, W_ip_b, tau_a)
+    outputs = {}
+    for condition in ['exp', 'cont']:
+        act_maps, burst_props = {}, {}
+        for out in ['F1', 'F2', 'N1', 'F3', 'N2']:
+            with open(f'data/act_maps_{condition}_{out}_{W_ip_a}.pkl', 'rb') as f:
+                act_map, burst_prop = pickle.load(f)
+            act_maps[out] = act_map
+            burst_props[out] = burst_prop
+        outputs[condition] = (act_maps, burst_props)
 
-            with open(f'plots/full_experiment/2d_case/act_maps_exp.pkl', 'rb') as f:
-                act_maps_exp, pos_bins_exp, burst_count_exp, event_count_exp = pickle.load(f)
+    act_maps_exp, burst_props_exp = outputs['exp']
+    act_maps_cont, burst_props_cont = outputs['cont']
 
-            with open(f'plots/full_experiment/2d_case/act_maps_cont.pkl', 'rb') as f:
-                act_maps_cont, pos_bins_cont, burst_count_cont, event_count_cont = pickle.load(f)
+    plot_all(act_maps_exp, act_maps_cont, (burst_props_exp, burst_props_cont), alpha, a, lr, ma_pc, mb_pc, W_ip_a, W_ip_b, tau_a)
 
-            plot_all(act_maps_exp, act_maps_cont, (burst_count_exp, burst_count_cont), (event_count_exp, event_count_cont), alpha, a, lr)
+    del outputs
+    del act_maps_exp, burst_props_exp
+    del act_maps_cont, burst_props_cont
+
+    import gc
+    gc.collect()
 
 
+if __name__ == '__main__':
+
+    alphas = [0.2]
+    aas = [0.5]
+    lrs = [10]
+    ma_pcs = [10000] # 5000
+    mb_pcs = [2000]
+    W_ip_a = [3000, 2000, 1000, 500]
+    W_ip_b = [4000]
+    tau_a = [1.0]
+
+    param_combinations = list(product(alphas, aas, lrs, ma_pcs, mb_pcs, W_ip_a, W_ip_b, tau_a))
+    os.makedirs('plots/full_experiment/2d_case/final_plots', exist_ok=True)
+
+    # run_single_experiment(param_combinations[0])
+
+    with mp.Pool(processes=mp.cpu_count()//6) as pool:
+        pool.map(run_single_experiment, param_combinations)
+
+    # with open(f'plots/full_experiment/2d_case/outputs.pkl', 'rb') as f:
+    #     outputs = pickle.load(f)
+    # act_maps_exp, burst_count_exp, event_count_exp, ec_act_maps_exp = outputs['exp']
+    # act_maps_cont, burst_count_cont, event_count_cont, ec_act_maps_cont = outputs['cont']
+    # plot_all(act_maps_exp, act_maps_cont, ec_act_maps_exp, ec_act_maps_cont,
+    #         (burst_count_exp, burst_count_cont), (event_count_exp, event_count_cont),
+    #          alphas[-1], aas[-1], lrs[-1], ma_pcs[-1], W_ip_a[-1], W_ip_b[-1], tau_a[-1])
+
+   
+    
