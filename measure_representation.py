@@ -7,6 +7,7 @@ from sklearn.decomposition import PCA
 from itertools import product
 import pickle
 import os
+import multiprocessing as mp
 
 
 
@@ -89,102 +90,107 @@ def pca_ellipsoid_volume(data):
     return volume
 
 
-t_epoch = 1
-speed = 20
-len_track = 100. 
-dt = 0.001
-tn = len_track/speed*32
-a = 0.3
-n_cells = {'pyramidal' : 200, 'inter_a' : 20, 'inter_b' : 20, 'CA3' : 120}
-len_track = 100
-n_env = 50
-a = 0 ## Similarity between maps
-lr = 15
-n_bins = 100
+def run_single_simulation(alpha):
 
-t_run, x_run = simulate_run(len_track=len_track, av_running_speed=speed, dt=dt, tn=tn)
-x_pos = np.arange(0, len_track, 1)
+    t_epoch = 1
+    speed = 20
+    len_track = 100. 
+    dt = 0.001
+    tn = len_track/speed*32
+    a = 0.3
+    n_cells = {'pyramidal' : 200, 'inter_a' : 20, 'inter_b' : 20, 'CA3' : 120}
+    len_track = 100
+    n_env = 50
+    a = 0 ## Similarity between maps
+    lr = 15
+    n_bins = 100
+
+    t_run, x_run = simulate_run(len_track=len_track, av_running_speed=speed, dt=dt, tn=tn)
+    x_pos = np.arange(0, len_track, 1)
 
 
-methods = {
-    # 'mvee' : mvee_ellipsoid_volume,
-    'pca' : pca_ellipsoid_volume,
-    # 'aabb' : aabb_volume,
-}
+    methods = {
+        # 'mvee' : mvee_ellipsoid_volume,
+        'pca' : pca_ellipsoid_volume,
+        # 'aabb' : aabb_volume,
+    }
 
-plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(10, 5))
 
-for a in np.round(np.linspace(0,1,11),1):
+    for a in np.round(np.linspace(0,1,11),1):
 
-    pyramidal = PyramidalCells(
-        n_cells = n_cells,
-        len_track = len_track,
-        learning_rate=lr,
-        dt = dt,
-        n_env = n_env # TODO: I am not sure how this parameter behaves
-    )
+        pyramidal = PyramidalCells(
+            n_cells = n_cells,
+            len_track = len_track,
+            learning_rate=lr,
+            dt = dt,
+            n_env = n_env # TODO: I am not sure how this parameter behaves
+        )
+        pyramidal.alpha = alpha
 
-    m_EC_orig = pyramidal.m_EC.copy()
+        m_EC_orig = pyramidal.m_EC.copy()
+            
+        all_envs = np.zeros((n_env*x_pos.shape[0], n_cells['CA3'] )) #
+        all_envs_CA1 = np.zeros((n_env*n_bins, n_cells['pyramidal'] )) #
+        vols, vols_CA1 = [], []
+
+        out_CA1 = f'plots/measure_representation/volumes_CA1_{a}.pkl'
+        # if os.path.exists(out_CA1):
+        #     continue
+
+        for env_idx in range(n_env):
         
-    all_envs = np.zeros((n_env*x_pos.shape[0], n_cells['CA3'] )) #
-    all_envs_CA1 = np.zeros((n_env*n_bins, n_cells['pyramidal'] )) #
-    vols, vols_CA1 = [], []
+            # act = pyramidal.create_activity_pc(x_pos, len_track, pyramidal.n_cells['CA3'],
+            #                                    pyramidal.mb_pc, pyramidal.m_CA3, pyramidal.all_m_CA3[env_idx], a)[:, :-5]
+            
+            sc, bc = pyramidal.retrieve_place_cells(t_run, x_run, new_env=env_idx, a=a, t_per_epoch=t_epoch, top_down=False, plasticity = True)
+            fr, x_run_reshaped = get_firing_rates(pyramidal, sc, x_run)
+            mean_firing_rates = get_activation_map(fr, m_EC_orig, x_run_reshaped, n_bins=n_bins)
 
-    out_CA1 = f'plots/measure_representation/volumes_CA1_{a}.pkl'
-    # if os.path.exists(out_CA1):
-    #     continue
+            all_envs_CA1[env_idx*n_bins:(env_idx+1)*n_bins, :] = mean_firing_rates.T
+            # all_envs[env_idx*x_pos.shape[0]:(env_idx+1)*x_pos.shape[0], :] = act.T
+            # print(pca_ellipsoid_volume(all_envs_CA1[:(env_idx+1)*n_bins, :]))
+            # print(pca_ellipsoid_volume(all_envs[:(env_idx+1)*x_pos.shape[0], :]))
 
-    for env_idx in range(n_env):
-    
-        # act = pyramidal.create_activity_pc(x_pos, len_track, pyramidal.n_cells['CA3'],
-        #                                    pyramidal.mb_pc, pyramidal.m_CA3, pyramidal.all_m_CA3[env_idx], a)[:, :-5]
-        
-        sc, bc = pyramidal.retrieve_place_cells(t_run, x_run, new_env=env_idx, a=a, t_per_epoch=t_epoch, top_down=False, plasticity = True)
-        fr, x_run_reshaped = get_firing_rates(pyramidal, sc, x_run)
-        mean_firing_rates = get_activation_map(fr, m_EC_orig, x_run_reshaped, n_bins=n_bins)
+            # fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+            # axs[0].imshow(all_envs_CA1[:(env_idx+1)*n_bins, :], aspect='auto', cmap='hot')
+            # axs[0].set_title(f'Activation map CA1 for {env_idx} environments')
+            # axs[0].set_xlabel('Cell index')
+            # axs[0].set_ylabel('Position bin')
+            # axs[0].colorbar = plt.colorbar(axs[0].images[-1], ax=axs[0])
+            # 
+            # axs[1].imshow(all_envs[:(env_idx+1)*x_pos.shape[0], :], aspect='auto', cmap='hot')
+            # axs[1].set_title(f'Activation map CA3 for {env_idx} environments')
+            # axs[1].set_xlabel('Cell index')
+            # axs[1].set_ylabel('Position bin')
+            # axs[1].colorbar = plt.colorbar(axs[1].images[-1], ax=axs[1])
+            # plt.savefig(f'plots/measure_representation/activation_maps.png')
+            # plt.close()
+            # vols.append(pca_ellipsoid_volume(all_envs[:(env_idx+1)*x_pos.shape[0], :]))
+            # vols_CA1.append(pca_ellipsoid_volume(all_envs_CA1[:(env_idx+1)*n_bins, :]))
 
-        all_envs_CA1[env_idx*n_bins:(env_idx+1)*n_bins, :] = mean_firing_rates.T
-        # all_envs[env_idx*x_pos.shape[0]:(env_idx+1)*x_pos.shape[0], :] = act.T
-        # print(pca_ellipsoid_volume(all_envs_CA1[:(env_idx+1)*n_bins, :]))
-        # print(pca_ellipsoid_volume(all_envs[:(env_idx+1)*x_pos.shape[0], :]))
-
-        # fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-        # axs[0].imshow(all_envs_CA1[:(env_idx+1)*n_bins, :], aspect='auto', cmap='hot')
-        # axs[0].set_title(f'Activation map CA1 for {env_idx} environments')
-        # axs[0].set_xlabel('Cell index')
-        # axs[0].set_ylabel('Position bin')
-        # axs[0].colorbar = plt.colorbar(axs[0].images[-1], ax=axs[0])
+        # with open(out_CA1, 'wb') as f:
+        #     pickle.dump(vols_CA1, f)
         # 
-        # axs[1].imshow(all_envs[:(env_idx+1)*x_pos.shape[0], :], aspect='auto', cmap='hot')
-        # axs[1].set_title(f'Activation map CA3 for {env_idx} environments')
-        # axs[1].set_xlabel('Cell index')
-        # axs[1].set_ylabel('Position bin')
-        # axs[1].colorbar = plt.colorbar(axs[1].images[-1], ax=axs[1])
-        # plt.savefig(f'plots/measure_representation/activation_maps.png')
-        # plt.close()
-        # vols.append(pca_ellipsoid_volume(all_envs[:(env_idx+1)*x_pos.shape[0], :]))
-        vols_CA1.append(pca_ellipsoid_volume(all_envs_CA1[:(env_idx+1)*n_bins, :]))
+        # with open(out_CA1.replace('CA1', 'CA3'), 'wb') as f:
+        #     pickle.dump(vols, f)
 
-    # with open(out_CA1, 'wb') as f:
-    #     pickle.dump(vols_CA1, f)
-    # 
-    # with open(out_CA1.replace('CA1', 'CA3'), 'wb') as f:
-    #     pickle.dump(vols, f)
+        with open(f'plots/measure_representation/all_envs_{alpha}_{a}.pkl', 'wb') as f:
+            pickle.dump((all_envs_CA1), f)
+        
+        plt.plot((vols_CA1), label=f'similarity = {a}')
 
-    with open(f'plots/measure_representation/all_envs_no_EC_{a}.pkl', 'wb') as f:
-        pickle.dump((all_envs_CA1), f)
-    
-    plt.plot((vols_CA1), label=f'similarity = {a}')
-
-    del pyramidal
-    import gc 
-    gc.collect()
+        del pyramidal
+        import gc 
+        gc.collect()
 
 
-plt.title(f'Volume of  Ellipsoid')
-plt.xlabel('Number of environments')
-plt.yscale('log')
-plt.ylabel('Volume')
-plt.legend()
-plt.savefig(f'plots/measure_representation/volume_pca_ellipsoid.png')
-plt.close()
+
+if __name__ == '__main__':
+    alphas = [0, 0.01, 0.05]
+    os.makedirs('plots/full_experiment/2d_case/final_plots', exist_ok=True)
+
+    # run_single_experiment(param_combinations[0])
+
+    with mp.Pool(processes=mp.cpu_count()//6) as pool:
+        pool.map(run_single_simulation, alphas)

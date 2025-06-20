@@ -48,10 +48,14 @@ class PyramidalCells():
 
         n_int_a, n_int_b, n_pyr = n_cells['inter_a'], n_cells['inter_b'], n_cells['pyramidal']
 
+        self.W_pi_b_factor = 30
         self.W_ip_a = 7000*np.ones((n_int_a, n_pyr))/(n_pyr)
         self.W_ip_b = 4000*np.ones((n_int_b, n_pyr))/(n_pyr)
         self.W_pi_a = 200*np.ones((n_pyr, n_int_a))/n_int_a
         self.W_pi_b = 30*np.ones((n_pyr, n_int_b))/n_int_b
+
+        
+
         self.W_CA3 = np.random.rand(n_cells['pyramidal'], n_cells['CA3'])  
 
         W_CA3_norm = np.sum(self.W_CA3, axis=1)
@@ -71,7 +75,7 @@ class PyramidalCells():
             }
                 
         self.alpha = 0.2
-        self.ma_pc, self.mb_pc = 40, 32
+        self.ma_pc, self.mb_pc = 80, 32 # 40, 32
         self.all_CA3_activities = np.zeros((n_cells['CA3'], (int(1000/dt))))
 
         # TODO: Will I need to use rng here like in 2D case? Apparently it's best practice in numpy for some reason
@@ -90,6 +94,35 @@ class PyramidalCells():
         # TODO: This should catch old code for now 
         self.m_CA3, self.m_CA3_new = self.all_m_CA3[0], self.all_m_CA3[1]
         self.m_EC, self.m_EC_new = self.all_m_EC[0], self.all_m_EC[1]
+
+
+        # --- NEW: Parameters for STDP traces (f_E and f_I) ---
+        # Time constant for post-synaptic excitatory trace (pyramidal)
+        self.tau_fE = 20 # ms 
+        # Amplitude increment for f_E upon a spike
+        self.A_fE = 1.0  
+        # Time constant for pre-synaptic inhibitory trace (interneuron B)
+        self.tau_fI = 20 # ms 
+        # Amplitude increment for f_I upon a spike
+        self.A_fI = 1.0  
+        # The constant offset from the formula, causing baseline depression (less inhibition)
+        self.constant_depression_term = 0.01 
+
+        # Initialize traces (will be updated at each time step within run_one_epoch)
+        # Trace for post-synaptic excitatory (pyramidal) neurons
+        self.f_E_trace = np.zeros(n_cells['pyramidal']) 
+        # Trace for pre-synaptic inhibitory (interneuron B) neurons
+        self.f_I_trace_b = np.zeros(n_cells['inter_b']) 
+
+        # Initialize accumulated delta W for W_ip_b (I->E weights)
+        # This will store the total weight change over an epoch before applying it.
+        self.accumulated_delta_W_ip_b = np.zeros(self.W_ip_b.shape)
+        self.accumulated_delta_W_pi_b = np.zeros(self.W_pi_b.shape)
+
+        self.W_max_ip_b = 5000/(n_cells['pyramidal'])  # Maximum weight for I->E connections
+        self.W_max_pi_b = 25/(n_cells['inter_b'])  # Maximum weight for I->I connections
+
+        self.inh_plasticity = True  
 
         
     def dynamics_basal(self, t, v):
@@ -112,7 +145,7 @@ class PyramidalCells():
 
     def dynamics_interneuron_b(self, t, v):
         R_i, E_L_i, tau_i = self.pi['R'], self.pi['E_L'], self.pi['tau']
-        v_dot = 1/tau_i * (E_L_i - v + R_i * (self.W_ip_b @ self.spiking)) 
+        v_dot = 1/tau_i * (E_L_i - v + R_i * (self.W_ip_b @ self.spiking))  ##### TODO: Change back to recurrent
         return v_dot
     
 
@@ -149,6 +182,14 @@ class PyramidalCells():
 
         t, t_old = 0, 0
 
+        # Reset accumulated delta W for W_ip_b at the beginning of each epoch
+        self.accumulated_delta_W_ip_b = np.zeros(self.W_ip_b.shape)
+        self.accumulated_delta_W_pi_b = np.zeros(self.W_pi_b.shape)
+
+        # Reset STDP traces at the beginning of each epoch to ensure fresh calculation
+        self.f_E_trace = np.zeros(self.n_cells['pyramidal'])
+        self.f_I_trace_b = np.zeros(self.n_cells['inter_b'])
+
         for t in range(1, int(round(t_epoch / dt)) + 1):
              
             for value_name, (dynamics, value) in self.dynamics_values.items():
@@ -173,6 +214,31 @@ class PyramidalCells():
             self.burst_count[t-1, :] = self.bursting
             self.spike_count[t-1, :] = self.spiking
             self.spike_count_int_b[t-1, :] = self.inter_spikes_b
+
+            self.f_E_trace = self.f_E_trace * np.exp(-self.dt / self.tau_fE) + self.A_fE * self.spiking
+
+            # Update pre-synaptic inhibitory trace (f_I for interneuron B)
+            # f_I(t+dt) = f_I(t) * exp(-dt / tau_fI) + A_fI * S_I(t)
+            self.f_I_trace_b = self.f_I_trace_b * np.exp(-self.dt / self.tau_fI) + self.A_fI * self.inter_spikes_b
+            term1 = np.outer(self.spiking, self.f_I_trace_b) # Shape (n_pyr, n_int_b)
+
+            # Term 2: f_E^i * V_I^j (Pre-synaptic I spike, modulated by post-synaptic E trace)
+            # f_E^i is self.f_E_trace (n_pyr,)
+            # V_I^j is self.inter_spikes_b (n_int_b,)
+            # So, term2[i,j] = f_E[i] * V_I[j]
+            term2 = np.outer(self.f_E_trace, self.inter_spikes_b) # Shape (n_pyr, n_int_b)
+
+            # Combine terms and apply constant depression
+            # Note: The constant_depression_term is applied per connection, so it's a scalar.
+            # The result `instantaneous_delta_W` has shape (n_pyr, n_int_b)
+            instantaneous_delta_W_ip_b = self.eta * (term2 - term1)
+            instantaneous_delta_W_pi_b = self.eta * (term1 + term2 - self.constant_depression_term)
+
+
+            # Accumulate the weight change over the epoch (multiply by dt as it's a rate)
+            # We need to transpose `instantaneous_delta_W` to match `self.W_ip_b`'s shape (n_int_b, n_pyr)
+            self.accumulated_delta_W_ip_b += instantaneous_delta_W_ip_b.T * self.dt
+            self.accumulated_delta_W_pi_b += instantaneous_delta_W_pi_b * self.dt
 
             t_old = t_new
 
@@ -227,7 +293,7 @@ class PyramidalCells():
 
         delta_W = self.eta * (np.outer(mean_bursts + self.alpha*(mean_events), mean_Ib) )
         self.W_CA3 += delta_W   
-        
+            
         if np.sum(self.W_CA3) != 0:    
             W_CA3_norm = np.sum(self.W_CA3, axis=1)
             self.W_CA3 = self.W_CA3 / W_CA3_norm[:, np.newaxis] 
@@ -237,5 +303,20 @@ class PyramidalCells():
             print(delta_W, self.W_CA3)
             quit()
 
-        self.plast_count += 1
+        if self.inh_plasticity:
+            
+            self.W_ip_b += self.accumulated_delta_W_ip_b 
+            self.W_pi_b += self.accumulated_delta_W_pi_b
+            
+            # Clamp W_ip_b weights to be non-negative, as specified by the user's model
+            # (W_IE is a positive matrix, used with a minus sign for inhibition).
+            self.W_ip_b = np.where(self.W_ip_b < 0, 0, self.W_ip_b)
+            self.W_pi_b = np.where(self.W_pi_b < 0, 0, self.W_pi_b)
 
+            # print(self.W_ip_b, self.W_pi_b)
+
+            # TODO (?) Optional: Add an upper bound if Wmax is desired, similar to the original text
+            # self.W_ip_b = np.where(self.W_ip_b > self.W_max_ip_b, self.W_max_ip_b, self.W_ip_b) 
+            # self.W_pi_b = np.where(self.W_pi_b > self.W_max_pi_b, self.W_max_pi_b, self.W_pi_b)
+
+        self.plast_count += 1

@@ -8,6 +8,10 @@ import csv
 import pandas as pd
 from itertools import product
 import seaborn as sns
+import multiprocessing as mp
+import os
+import pickle
+
 
 
 ENVIRONMENTS_RUNS = {
@@ -18,14 +22,14 @@ ENVIRONMENTS_RUNS = {
     "N2": {'new_env': True,  'top_down': True},
     }
 
-ENVIRONMENTS_RUNS_CONTROL = {
-   
-    "F2": {'new_env': False, 'top_down': True},
-    "N1": {'new_env': True,  'top_down': True},
-    "F3": {'new_env': False, 'top_down': True}, 
-    "N2": {'new_env': True,  'top_down': True},
-    
-    }
+# ENVIRONMENTS_RUNS_CONTROL = {
+#    
+#     "F2": {'new_env': False, 'top_down': True},
+#     "N1": {'new_env': True,  'top_down': True},
+#     "F3": {'new_env': False, 'top_down': True}, 
+#     "N2": {'new_env': True,  'top_down': True},
+#     
+#     }
 
 
 def simulate_run(len_track = 200, av_running_speed = 20, dt = 0.01, tn = 1000):
@@ -40,10 +44,12 @@ def simulate_run(len_track = 200, av_running_speed = 20, dt = 0.01, tn = 1000):
         stopping_time = np.random.uniform(0, 1, 2)
         stop1 = np.ones((int(stopping_time[0]*fps),)) * 0.
         speed = av_running_speed + np.random.randn() * 5
+        speed = speed if speed > 0 else av_running_speed # ensure speed is positive
         run_length = len(bins) * fps / speed
         run1 = np.linspace(0., float(len(bins)-1), int(run_length))
         stop2 = np.ones((int(stopping_time[1]*fps),)) * (len(bins)-1.)
         speed = av_running_speed + np.random.randn() * 5
+        speed = speed if speed > 0 else av_running_speed # ensure speed is positive
         run_length = len(bins) * fps / speed
         run2 = np.linspace(len(bins)-1., 0., int(run_length))
         x = np.concatenate((x, stop1, run1, stop2, run2))
@@ -113,25 +119,28 @@ def cor_act_maps(act_map1, act_map2):
     return cor
 
 
-def run_simulation(alpha = 0.2, lr = 15, ma_pc = 40, mb_pc = 32, plot_burst = False):
+def run_simulation(alpha = 0.2, lr = 15, ma_pc = 40, mb_pc = 32, w_ip_b = 4000, w_pi_b = 30, w_pi_a = 200, w_ip_a = 7000, plot_burst = False):
     t_epoch = 1
     speed = 20
     len_track = 100. 
     dt = 0.001
     tn = len_track/speed*32
-    a = 0.3 # similarity between environments
+    a = 0.3 # .3  # similarity between environments
     n_cells = {'pyramidal' : 200, 'inter_a' : 20, 'inter_b' : 20, 'CA3' : 120}
 
     pvs_per_condition = {}
+    all_act_maps = {}
 
-    for condition in ['exp','control']:
-
-    #### TODO: Loop here over exp, control condition and for control just keep top down on but go through all 4 phases
+    for condition in ['exp', 'control']:
 
         pyramidal = PyramidalCells(n_cells, len_track = len_track, learning_rate = lr, dt = dt)
         pyramidal.ma_pc, pyramidal.mb_pc = ma_pc, mb_pc
-        pyramidal.W_ip_a = pyramidal.W_ip_a
-        pyramidal.alpha = alpha
+        pyramidal.alpha = 0.05 # alpha
+
+        pyramidal.W_ip_a = w_ip_a*np.ones((n_cells['inter_a'], n_cells['pyramidal']))/(n_cells['pyramidal']) # 7000
+        pyramidal.W_ip_b = w_ip_b*np.random.rand(n_cells['inter_b'], n_cells['pyramidal'])/(n_cells['pyramidal']) # 4000
+        pyramidal.W_pi_a = w_pi_a*np.ones((n_cells['pyramidal'], n_cells['inter_a']))/n_cells['inter_a'] # 200
+        pyramidal.W_pi_b = w_pi_a*np.random.rand(n_cells['pyramidal'], n_cells['inter_b'])/n_cells['inter_b'] # 30
 
         t_run, x_run = simulate_run(len_track, speed, dt, tn)
 
@@ -171,18 +180,157 @@ def run_simulation(alpha = 0.2, lr = 15, ma_pc = 40, mb_pc = 32, plot_burst = Fa
         pv_n1_n2 = cor_act_maps(activation_maps['N1'], activation_maps['N2'])
 
         pvs_per_condition[condition] = [pv_f1_f2, pv_f2_n1, pv_n1_n2]
+        all_act_maps[condition] = activation_maps
 
-    fig, axs = plt.subplots(1, 3, figsize=(12, 6))
+        
+    # fig, axs = plt.subplots(1, 3, figsize=(12, 6))
+    # axs = axs.flatten()
+    #   
+    # for i, comp in enumerate([('F1', 'F2'), ('F2', 'N1'), ('N1', 'N2')]):
+    #     plot_pv_corr_distributions(pvs_per_condition['exp'][i], pvs_per_condition['control'][i], comp[0], comp[1], axs[i])
+    # 
+    # plt.tight_layout()
+    # plt.savefig(f"plots/full_experiment/pop_vec/pv_corr_distributions_inpb_{mb_pc}_inpa_{ma_pc}_lr_{lr}.png", dpi=300)
+    # plt.close()
+
+    
+
+    for condition in all_act_maps.keys():
+        fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+        axs = axs.flatten()
+        activation_maps = all_act_maps[condition]
+        for i, out in enumerate(['F2', 'N1', 'F3', 'N2']):
+            plot_firing_rates(fig, axs[i], activation_maps[out], out)
+        plt.tight_layout()
+        plt.savefig(f"plots/full_experiment/activation_maps/{condition}_act_map.png", dpi=300) # _ipa_{w_ip_a}_ipb_{w_ip_b}_pia_{w_pi_a}_pib_{w_pi_b}
+        plt.close()
+
+        fig, axs = plt.subplots(1, 2, figsize=(10, 6))
+        axs = axs.flatten()
+        im = axs[0].imshow(pyramidal.W_ip_b, aspect='auto', origin='lower')
+        fig.colorbar(im, ax=axs[0])
+        axs[0].set_title(f"W_ip_b")
+        im = axs[1].imshow(pyramidal.W_pi_b, aspect='auto', origin='lower')
+        fig.colorbar(im, ax=axs[1])
+        axs[1].set_title(f"W_pi_b")
+        plt.tight_layout()
+        plt.savefig(f"plots/full_experiment/weights/{condition}_weights.png", dpi=300)
+        plt.close()
+
+
+def plot_act_maps(activation_maps, activation_maps_ca3, a):
+    fig, axs = plt.subplots(2, 2, figsize=(12, 6))
     axs = axs.flatten()
 
-    for i, comp in enumerate([('F1', 'F2'), ('F2', 'N1'), ('N1', 'N2')]):
-        plot_pv_corr_distributions(pvs_per_condition['exp'][i], pvs_per_condition['control'][i], comp[0], comp[1], axs[i])
+    all_act_maps = activation_maps + activation_maps_ca3
+    titles = ['F CA1', 'N CA1', 'F CA3', 'N CA3']
+
+    for i, ax in enumerate(axs):
+
+        im = ax.imshow(all_act_maps[i], aspect='auto', origin='lower', extent=[0, 100, 0, all_act_maps[i].shape[0]])
+        fig.colorbar(im, ax=ax)
+        ax.set_title('Activation Map ' + titles[i])
+
 
     plt.tight_layout()
-    plt.savefig(f"plots/full_experiment/pop_vec/pv_corr_distributions_inpb_{mb_pc}_inpa_{ma_pc}_lr_{lr}.png", dpi=300)
+    plt.savefig(f"plots/full_experiment/activation_maps/act_map_{a}.png", dpi=300)
     plt.close()
 
 
+def plot_w_ca3(w_ca3, m_EC_orig, m_CA3_orig):
+    plt.figure(figsize=(10, 6))
+    sort_EC = np.argsort(m_EC_orig)
+    sort_CA3 = np.argsort(m_CA3_orig)
+    w_ca3 = w_ca3[np.ix_(sort_EC, sort_CA3)]
+    im = plt.imshow(w_ca3, aspect='auto', origin='lower')
+    plt.colorbar(im)
+    plt.title('W_CA3')
+    plt.xlabel('Pyramidal Cells')
+    plt.ylabel('CA3 Cells')
+
+    plt.tight_layout()
+    plt.savefig(f"plots/full_experiment/weights/w_ca3.png", dpi=300)
+
+
+
+def test_similarities():
+    t_epoch = 1
+    speed = 20
+    len_track = 100. 
+    dt = 0.001
+    tn = len_track/speed*32
+    a = 0.3 # .3  # similarity between environments
+    lr = 15
+    n_cells = {'pyramidal' : 200, 'inter_a' : 20, 'inter_b' : 20, 'CA3' : 120}
+
+    aas = np.arange(0, 1.1, 0.1)
+
+    for inh_plast in [True]: # True, False
+
+        cors, cors_ca3 = [], []
+
+        for a in aas:
+
+            pyramidal = PyramidalCells(n_cells, len_track = len_track, learning_rate = lr, dt = dt)
+            
+            pyramidal.inh_plasticity = inh_plast
+            pyramidal.alpha = 0.05 # alpha
+
+            pyramidal.W_ip_a = 7000*np.ones((n_cells['inter_a'], n_cells['pyramidal']))/(n_cells['pyramidal']) # 7000
+            pyramidal.W_ip_b = 1000*np.random.rand(n_cells['inter_b'], n_cells['pyramidal'])/(n_cells['pyramidal']) # 4000
+            pyramidal.W_pi_a = 200*np.ones((n_cells['pyramidal'], n_cells['inter_a']))/n_cells['inter_a'] # 200
+            pyramidal.W_pi_b = 200*np.random.rand(n_cells['pyramidal'], n_cells['inter_b'])/n_cells['inter_b'] # 30
+        
+            t_run, x_run = simulate_run(len_track, speed, dt, tn)
+
+            activation_maps, activation_maps_ca3 = [], []
+
+            pyramidal.retrieve_place_cells(t_run, x_run, top_down=True, new_env=False, a = a, t_per_epoch=t_epoch)
+
+            for env in [0, 1]:
+
+                event_count, _ = pyramidal.retrieve_place_cells(
+                    t_run, x_run, top_down=True, new_env=bool(env), a = a, t_per_epoch=t_epoch, plasticity=False)
+                ca3_act = pyramidal.full_CA3_activities.T
+                if env == 0: ## Save ordering of first env, although sorting is arbitrary, to make them comparable 
+                    # TODO: Check if this is correct, should be visible from results
+                    m_EC_orig, m_CA3_orig = pyramidal.m_EC, pyramidal.m_CA3
+
+                fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
+                mean_firing_rates = get_activation_map(fr, m_EC_orig, x_run_reshaped)
+
+                m_fr_ca3 = get_activation_map(ca3_act, m_CA3_orig, x_run)
+
+                activation_maps.append(mean_firing_rates)
+                activation_maps_ca3.append(m_fr_ca3)
+
+            # plot_act_maps(activation_maps, activation_maps_ca3, a)
+            # plot_w_ca3(pyramidal.W_CA3, m_EC_orig, m_CA3_orig)
+
+            pv_corr = cor_act_maps(activation_maps[0], activation_maps[1])
+            pv_corr_ca3 = cor_act_maps(activation_maps_ca3[0], activation_maps_ca3[1])
+
+            cors.append(np.mean(pv_corr))
+            cors_ca3.append(np.mean(pv_corr_ca3))
+            print(f"Alpha: {a}, Inh Plast: {inh_plast}, PV Corr: {np.mean(pv_corr)}, CA3 PV Corr: {np.mean(pv_corr_ca3)}")
+
+        with open(f'plots/test_similarities/pv_corr_vs_similarity_inh_plast_{inh_plast}.pkl', mode='wb') as file:
+            pickle.dump({'aas': aas, 'cors': cors, 'cors_ca3': cors_ca3}, file)
+
+        plt.figure()
+        plt.plot(aas, cors, label=f'CA1')
+        plt.plot(aas, cors_ca3, label=f'CA3')
+        plt.xlabel('Similarity (a)')
+        plt.ylabel('PV Correlation')
+        plt.title(f'PV Correlation vs Similarity Inh Plast {inh_plast}')
+        plt.legend()
+        plt.savefig(f'plots/test_similarities/pv_corr_vs_similarity_inh_plast_{inh_plast}.png', dpi=300)
+        plt.close()
+
+
+
+
+    
 def plot_pv_corr_distributions(pv_corr_exp, pv_corr_cont, out1, out2, ax):
 
     color_exp, color_cont = 'green', 'gray'
@@ -289,25 +437,48 @@ def gauss(x, mu, sig):
     return np.exp(-0.5 * ((mu[:, None] - x[None, :])**2) / sig**2)
 
 
+def run_single_experiment(params):
+    w_ip_b, w_pi_b, w_pi_a, w_ip_a = params
+    print(f"Running experiment with w_ip_b: {w_ip_b}, w_pi_b: {w_pi_b}, w_pi_a: {w_pi_a}, w_ip_a: {w_ip_a}")
+    run_simulation(w_ip_b=w_ip_b, w_pi_b=w_pi_b, w_pi_a=w_pi_a, w_ip_a=w_ip_a)
+    # run_simulation_control(w_ip_b=w_ip_b, w_pi_b=w_pi_b, w_pi_a=w_pi_a, w_ip_a=w_ip_a)
+
+
 def main():
     # simulate_for_alphas()
     # plot_cors()
     np.random.seed(1903)
+
+    test_similarities()
+
+    quit()
     alpha = 0.2
-    mb_pcs = [20,30,50,100]
+
+    w_ip_bs = [1000] # 4000
+    w_pi_bs = [5] #30
+    w_pi_as = [200] # 200
+    w_ip_as = [7000] # 7000
+
+    param_combinations = list(product(w_ip_bs, w_pi_bs, w_pi_as, w_ip_as))
+
+    run_single_experiment(param_combinations[0])
+
+    # with mp.Pool(processes=mp.cpu_count()//6) as pool:
+    #     pool.map(run_single_experiment, param_combinations)
+    # mb_pcs = [20,30,50,100]
     # run_simulation_control(alpha, plot_burst = True)
-    for mb_pc in mb_pcs:
-        run_simulation(alpha, mb_pc=mb_pc, plot_burst = True)
+    # for mb_pc in mb_pcs:
+    # run_simulation(alpha, plot_burst = True)
 
-    ma_pcs = [10,20,30,50,100]
-
-    for ma_pc in ma_pcs:
-        run_simulation(alpha, ma_pc=ma_pc, plot_burst = True)
-    
-    lrs = [5, 10, 15, 20, 25, 50]
-
-    for lr in lrs:
-        run_simulation(alpha, lr=lr, plot_burst = True)
+    # ma_pcs = [10,20,30,50,100]
+# 
+    # for ma_pc in ma_pcs:
+    #     run_simulation(alpha, ma_pc=ma_pc, plot_burst = True)
+    # 
+    # lrs = [5, 10, 15, 20, 25, 50]
+# 
+    # for lr in lrs:
+    #     run_simulation(alpha, lr=lr, plot_burst = True)
 
     # test_activation_maps()
 
