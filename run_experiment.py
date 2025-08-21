@@ -265,60 +265,76 @@ def test_similarities():
 
     aas = np.arange(0, 1.1, 0.1)
 
-    for inh_plast in [True]: # True, False
+    for idx in range(1, 50):
 
-        cors, cors_ca3 = [], []
+        for lr_inh in [False, 1, 10, 100]:
 
-        for a in aas:
+            cors = {}
 
-            pyramidal = PyramidalCells(n_cells, len_track = len_track, learning_rate = lr, dt = dt)
-            
-            pyramidal.inh_plasticity = inh_plast
-            pyramidal.alpha = 0.05 # alpha
+            inh_plast = True if lr_inh else False
 
-            pyramidal.W_ip_a = 7000*np.ones((n_cells['inter_a'], n_cells['pyramidal']))/(n_cells['pyramidal']) # 7000
-            pyramidal.W_ip_b = 1000*np.random.rand(n_cells['inter_b'], n_cells['pyramidal'])/(n_cells['pyramidal']) # 4000
-            pyramidal.W_pi_a = 200*np.ones((n_cells['pyramidal'], n_cells['inter_a']))/n_cells['inter_a'] # 200
-            pyramidal.W_pi_b = 200*np.random.rand(n_cells['pyramidal'], n_cells['inter_b'])/n_cells['inter_b'] # 30
-        
-            t_run, x_run = simulate_run(len_track, speed, dt, tn)
+            for (top_down, plasticity) in [(True, False), (True, True), (False, True)]:
 
-            activation_maps, activation_maps_ca3 = [], []
+                cors_ca3 = []
+                cors[(f'{top_down}_{plasticity}')] = []
 
-            pyramidal.retrieve_place_cells(t_run, x_run, top_down=True, new_env=False, a = a, t_per_epoch=t_epoch)
+                for a in aas:
 
-            for env in [0, 1]:
+                    pyramidal = PyramidalCells(n_cells, len_edge = len_track, learning_rate = lr, dt = dt, inh_plasticity= inh_plast)
+                    
+                    pyramidal.alpha = 0.05 # alpha
+                    pyramidal.eta_inh = lr_inh
 
-                event_count, _ = pyramidal.retrieve_place_cells(
-                    t_run, x_run, top_down=True, new_env=bool(env), a = a, t_per_epoch=t_epoch, plasticity=False)
-                ca3_act = pyramidal.full_CA3_activities.T
-                if env == 0: ## Save ordering of first env, although sorting is arbitrary, to make them comparable 
-                    # TODO: Check if this is correct, should be visible from results
-                    m_EC_orig, m_CA3_orig = pyramidal.m_EC, pyramidal.m_CA3
+                    pyramidal.W_ip_a = 7000*np.ones((n_cells['inter_a'], n_cells['pyramidal']))/(n_cells['pyramidal']) # 7000
+                    pyramidal.W_ip_b = 1000*np.random.rand(n_cells['inter_b'], n_cells['pyramidal'])/(n_cells['pyramidal']) # 4000
+                    pyramidal.W_pi_a = 200*np.ones((n_cells['pyramidal'], n_cells['inter_a']))/n_cells['inter_a'] # 200
+                    pyramidal.W_pi_b = 200*np.random.rand(n_cells['pyramidal'], n_cells['inter_b'])/n_cells['inter_b'] # 30
 
-                fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
-                mean_firing_rates = get_activation_map(fr, m_EC_orig, x_run_reshaped)
+                
+                    t_run, x_run = simulate_run(len_track, speed, dt, tn)
 
-                m_fr_ca3 = get_activation_map(ca3_act, m_CA3_orig, x_run)
+                    activation_maps, activation_maps_ca3 = [], []
 
-                activation_maps.append(mean_firing_rates)
-                activation_maps_ca3.append(m_fr_ca3)
+                    pyramidal.retrieve_place_cells(t_run, x_run, top_down=True, new_env=False, a=a, t_per_epoch=t_epoch)
 
-            # plot_act_maps(activation_maps, activation_maps_ca3, a)
-            # plot_w_ca3(pyramidal.W_CA3, m_EC_orig, m_CA3_orig)
+                    if plasticity:
+                        pyramidal.retrieve_place_cells(t_run, x_run, top_down=top_down, new_env=1, a=a, t_per_epoch=t_epoch)
 
-            pv_corr = cor_act_maps(activation_maps[0], activation_maps[1])
-            pv_corr_ca3 = cor_act_maps(activation_maps_ca3[0], activation_maps_ca3[1])
+                    for env in [0, 1]:
 
-            cors.append(np.mean(pv_corr))
-            cors_ca3.append(np.mean(pv_corr_ca3))
-            print(f"Alpha: {a}, Inh Plast: {inh_plast}, PV Corr: {np.mean(pv_corr)}, CA3 PV Corr: {np.mean(pv_corr_ca3)}")
+                        event_count, _ = pyramidal.retrieve_place_cells(
+                            t_run, x_run, top_down=False, new_env=env, a=a, t_per_epoch=t_epoch, plasticity=False
+                            )
+                        # ca3_act = pyramidal.full_CA3_activities.T
+                        if env == 0: ## Save ordering of first env, although sorting is arbitrary, to make them comparable 
+                            m_EC_orig, m_CA3_orig = pyramidal.m_EC, pyramidal.m_CA3
 
-        with open(f'plots/test_similarities/pv_corr_vs_similarity_inh_plast_{inh_plast}.pkl', mode='wb') as file:
-            pickle.dump({'aas': aas, 'cors': cors, 'cors_ca3': cors_ca3}, file)
+                        fr, x_run_reshaped = get_firing_rates(pyramidal, event_count, x_run)
+                        mean_firing_rates = get_activation_map(fr, m_EC_orig, x_run_reshaped)
+
+                        m_fr_ca3 = pyramidal.get_input_map(area='CA3', env=env, a=a)
+
+                        activation_maps.append(mean_firing_rates)
+                        activation_maps_ca3.append(m_fr_ca3)
+
+                    # plot_act_maps(activation_maps, activation_maps_ca3, a)
+                    # plot_w_ca3(pyramidal.W_CA3, m_EC_orig, m_CA3_orig)
+
+                    pv_corr = cor_act_maps(activation_maps[0], activation_maps[1])
+                    pv_corr_ca3 = cor_act_maps(activation_maps_ca3[0], activation_maps_ca3[1])
+
+                    cors[(f'{top_down}_{plasticity}')].append(np.mean(pv_corr))
+                    cors_ca3.append(np.mean(pv_corr_ca3))
+                    print(f"a: {a}, Inh Plast: {inh_plast}, PV Corr: {np.mean(pv_corr)}, CA3 PV Corr: {np.mean(pv_corr_ca3)}")
+
+            with open(f'plots/test_similarities/pv_corr_vs_similarity_inh_plast_{inh_plast}_lrinh_{lr_inh}_sim_{idx}.pkl', mode='wb') as file:
+                pickle.dump({'aas': aas, 'cors': cors, 'cors_ca3': cors_ca3}, file)
 
         plt.figure()
-        plt.plot(aas, cors, label=f'CA1')
+        for key, cor in cors.items():
+            key = key.split('_')
+            plt.plot(aas, cor, label=f'CA1: EC {"on" if key[0] == "True" else "off"}, exc plast {"on" if key[1] == "True" else "off"}')
+
         plt.plot(aas, cors_ca3, label=f'CA3')
         plt.xlabel('Similarity (a)')
         plt.ylabel('PV Correlation')
