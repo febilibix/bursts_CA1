@@ -1,2 +1,15 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data
 *.pkl
-*.pickle
+data/
+
+# Virtual envs
+.venv/
+env/
