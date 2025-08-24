@@ -113,8 +113,6 @@ def cor_act_maps(act_map1, act_map2, which='pv'):
         np.ndarray: 1D array of correlations with length equal to the iterated axis.
     """
 
-    # TODO: I think there is another implementation for the 2D case, I will need to see how to merge them
-
     axis = 1 if which == 'pv' else 0
     cor = np.zeros(act_map1.shape[axis])
 
@@ -126,29 +124,6 @@ def cor_act_maps(act_map1, act_map2, which='pv'):
         else:
             raise ValueError("Parameter 'which' must be either 'pv' or 'spatial'")
 
-    return cor
-
-
-
-
-def cor_act_maps_2d(act_map1, act_map2, which='pv'):
-    # act_map1, act_map2 = act_map[out1], act_map[out2]
-
-    ### TODO: Merge this with function above
-
-    if which == 'pv':
-        act_map1, act_map2 = act_map1.T, act_map2.T
-        
-    cor = np.zeros(act_map1.shape[0])
-
-    for i in range(act_map1.shape[0]):
-        valid_idx = ~np.isnan(act_map1[i, :]) & ~np.isnan(act_map2[i, :])
-        if np.any(valid_idx):
-            cor[i] = pearsonr(act_map1[i, valid_idx], act_map2[i, valid_idx])[0]
-        else:
-            cor[i] = np.nan  # Handle case where all values are NaN
-        # cor[i] = pearsonr(act_map1[i, :], act_map2[i, :])[0]
-       
     return cor
 
 
@@ -254,8 +229,6 @@ def simulate_2d_run(len_edge=20, av_running_speed=20, dt=0.01, tn=1000, a=np.pi/
 
 
 def get_firing_rates(dt, event_count, x_run, n_bins=1024, n_dim=1):
-    ## TODO: Instead of having 1024 hardcoded here i might want to make it dependend on length of simulation
-    ### TODO: I need to check what i am doing now but i will just use the implementation that worked
     """Bin spikes to firing rates and downsample trajectory to the same bins.
 
     Args:
@@ -280,20 +253,6 @@ def get_firing_rates(dt, event_count, x_run, n_bins=1024, n_dim=1):
         x_run_reshaped[:, i] = np.mean(x_run[:, i * step_size:(i + 1) * step_size], axis=1)
 
     return firing_rates, x_run_reshaped
-
-
-# def get_firing_rates_old(pyramidal, event_count, x_run):
-#     #TODO: Delete this once the one above is working for both 1D and 2D cases   
-# 
-#     firing_rates = np.zeros((event_count.shape[1], 1024))
-#     x_run_reshaped = np.zeros(1024)
-#     step_size = len(event_count)//firing_rates.shape[1]
-#     
-#     for i in range(firing_rates.shape[1]):
-#         firing_rates[:, i] = np.sum(event_count[i * step_size:(i + 1) * step_size, :], axis = 0) / (step_size*pyramidal.dt)
-#         x_run_reshaped[i] = np.mean(x_run[i * step_size:(i + 1) * step_size])
-# 
-#     return firing_rates, x_run_reshaped
 
 
 def get_activation_map_2d(firing_rates, len_edge, x_run_reshaped, n_bins = 225):
@@ -353,8 +312,6 @@ def get_activation_map(firing_rates, m_EC, x_run_reshaped, n_bins = 64):
             out: (n_cells, n_bins) activation map (Hz) sorted by m_EC.
     """
 
-    ## TODO: I think i can do the sorting at the end depending on whether i use EC sorting or peak
-
     if m_EC is not None:
         sort_TD = np.argsort(m_EC)
         sorted_fr = firing_rates[np.ix_(sort_TD, np.arange(firing_rates.shape[1]))]
@@ -387,7 +344,6 @@ def get_activation_map(firing_rates, m_EC, x_run_reshaped, n_bins = 64):
 
 
 def compute_burst_props(brs, frs, window=500):
-    # TODO: I don't think i use this function; double check
     """Compute smoothed burst proportion time series per condition.
 
     Proportion = burst_rate / (firing_rate + 1e-10), then boxcar-smoothed.

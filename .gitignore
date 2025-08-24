@@ -13,3 +13,6 @@ data/
 # Virtual envs
 .venv/
 env/
+
+.DS_Store
+**/.DS_Store

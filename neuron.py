@@ -379,8 +379,6 @@ class PyramidalCells():
         
         n_epochs = int(round(tn/t_per_epoch))
 
-        # TODO: Here i will need to see which ones i will need to save and which ones i don't because of memory
-
         full_spike_count = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
         full_burst_count = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
 
