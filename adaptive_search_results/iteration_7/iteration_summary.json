@@ -1,0 +1,50 @@
+{
+  "iteration": 7,
+  "timestamp": "2025-08-24T15:19:15.704555",
+  "param_ranges": {
+    "alphas": [
+      0,
+      6.5442816000000015
+    ],
+    "lrs": [
+      0,
+      103.26528
+    ],
+    "ma_pcs": [
+      0,
+      3045.70368
+    ],
+    "mb_pcs": [
+      0,
+      358.7328
+    ],
+    "inh_lrs": [
+      320.0,
+      480.0
+    ],
+    "W_ip_a": [
+      1000
+    ],
+    "W_pi_a": [
+      3200.0
+    ],
+    "W_ip_b": [
+      24.0
+    ],
+    "W_pi_b": [
+      0.8
+    ],
+    "tau_a": [
+      200.0
+    ],
+    "betas": [
+      0.1
+    ],
+    "tau_inh": [
+      0.1
+    ]
+  },
+  "grid_size": 32,
+  "good_solutions_count": 140,
+  "total_solutions_evaluated": 32
+}

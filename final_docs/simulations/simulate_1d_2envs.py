@@ -50,9 +50,9 @@ def run_single_experiment(lr=CONFIGS['1D']['eta'], lr_inh=CONFIGS['1D']['eta_inh
         pyramidal.mb_pc = mb_pc
 
         ## TODO:::::::
-        pyramidal.tau_fE = .020 # s
+        pyramidal.tau_fE = 0.1 # s - Updated to biological range
 
-        pyramidal.tau_fI = .020 # 
+        pyramidal.tau_fI = 0.1 # s - Updated to biological range 
         # pyramidal.W_ip_a = w_ip_a*np.ones((N_CELLS['1D']['inter_a'], N_CELLS['1D']['pyramidal']))/(N_CELLS['1D']['pyramidal'])
         # pyramidal.W_pi_a = w_pi_a*np.ones((N_CELLS['1D']['pyramidal'], N_CELLS['1D']['inter_a']))/N_CELLS['1D']['inter_a'] # 1000
         
@@ -207,7 +207,7 @@ if __name__ == "__main__":
     lrs = [0.5, 1, 2.5, 5, 10, 15, 20, 25]   
     ma_pcs = [180, 240, 360, 500, 750] # , 400, 800, 1200]# [5000] 
     mb_pcs = [50, 64, 75, 100] # , 64, 128, 256, 512]# [2000]
-    inh_lrs = [5, 10, 15, 25, 50, 75, 100] ## TODO: MAybe even less?! probably need to tune again, last time i was running with weird normalization
+    inh_lrs = [25, 50, 75, 125, 250, 375, 500] # Scaled by 5x to maintain iSTDP curve area with tau=0.1s
 
 
     params = list(product(alphas, lrs, inh_lrs, ma_pcs, mb_pcs))

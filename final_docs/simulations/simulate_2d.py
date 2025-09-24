@@ -54,9 +54,9 @@ def run_simulation(alpha, a, lr, ma_pc, mb_pc, W_pi_a, W_ip_a,  W_pi_b, W_ip_b, 
         pyramidal.mb_pc = mb_pc
 
         ## TODO:::::::
-        pyramidal.tau_fE = .020 # s
+        pyramidal.tau_fE = 0.1 # s - Updated to biological range
 
-        pyramidal.tau_fI = .020 # 
+        pyramidal.tau_fI = 0.1 # s - Updated to biological range 
         # pyramidal.W_ip_a = W_ip_a*np.ones((n_cells['inter_a'], n_cells['pyramidal']))/n_cells['pyramidal']
         # pyramidal.W_pi_a = W_pi_a*np.ones((n_cells['pyramidal'], n_cells['inter_a']))/n_cells['inter_a'] # 1000
         # pyramidal.W_ip_b = W_ip_b*np.ones((n_cells['inter_b'], n_cells['pyramidal']))/n_cells['pyramidal']
@@ -173,11 +173,11 @@ def run_single_experiment(params):
 if __name__ == '__main__':
     # run_simulation()
 
-    alphas = [0.1, 0.5, 0.7, 0.9, 1, 1.5] # TODO: I think this one is not tuned yet
-    lrs = [0.5, 1, 2.5, 5, 10, 15, 20, 25]   
-    ma_pcs = [180, 240, 360, 500, 750] # , 400, 800, 1200]# [5000] 
-    mb_pcs = [50, 64, 75, 100] # , 64, 128, 256, 512]# [2000]
-    inh_lrs = [5, 10, 15, 25, 50, 75, 100] # , 64, 128, 256, 512]# [2000]
+    alphas = [0.1, 0.05, 0.25, 0.7, 1.5, 5] # TODO: I think this one is not tuned yet
+    lrs = [1, 10,15, 25, 50, 75]   
+    ma_pcs = [180, 360, 500, 750] # , 400, 800, 1200]# [5000] 
+    mb_pcs = [64, 100, 128] # , 64, 128, 256, 512]# [2000]
+    inh_lrs = [1, 5, 10, 15, 25, 50, 75] # Scaled by 5x to maintain iSTDP curve area with tau=0.1s
     W_ip_a = [1000]
     W_pi_a = [500] 
     W_ip_b = [4000]
@@ -192,5 +192,5 @@ if __name__ == '__main__':
     # run_single_experiment(param_combinations[0])  # Run the first combination to test
     # quit()
 
-    with mp.Pool(processes=25) as pool:
+    with mp.Pool(processes=50) as pool:
         pool.map(run_single_experiment, param_combinations)

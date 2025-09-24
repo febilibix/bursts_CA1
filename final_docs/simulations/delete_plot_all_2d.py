@@ -44,8 +44,8 @@ def plot_one_file(path, out_path):
         print('Skipping, no data')
         return
     
-    if not (np.nanmedian(sp_cont_1) < 0.05 and np.nanmedian(sp_exp_1) > 0.5 and np.nanmedian(sp_exp_2) > 0.3):
-        # print('bad params, skipping')
+    if not (np.nanmedian(sp_cont_1) < 0.05 and np.nanmedian(sp_exp_1) > 0.4 and np.nanmedian(sp_exp_2) > 0.25):
+        print('bad params, skipping')
         # print('Mdn cont 1: ', np.nanmedian(sp_cont_1), ', ', 'Mdn exp 2: ', np.nanmedian(sp_exp_2))
         return
  
@@ -83,8 +83,8 @@ def plot_one_file(path, out_path):
 
     plt.tight_layout()
     plt.savefig(out_path, dpi=300)
-    os.makedirs(os.path.dirname(out_path.replace('plots', 'plots_verygood')), exist_ok=True)
-    plt.savefig(out_path.replace('plots', 'plots_verygood'), dpi=300)
+    os.makedirs(os.path.dirname(out_path.replace('plots', 'plots_vgood_new')), exist_ok=True)
+    plt.savefig(out_path.replace('plots', 'plots_vgood_new'), dpi=300)
     # plt.show()
 
     # if alpha == 0.1:
@@ -115,7 +115,7 @@ def plot_all_conditions(all_act_maps, axs):
     # plt.show()
     # plt.close()
 
-path_name = 'data/2d_test5/'
+path_name = 'data/2d_test5'
 
 dirs = os.listdir(path_name)
 
@@ -130,6 +130,7 @@ for dir_name in tqdm(dirs):
 
     all_outs = ['cont_' + i for i in ['F1', 'F2', 'N1', 'F3', 'N2']] + ['exp_' + i for i in ['F1', 'F2', 'N1', 'F3', 'N2']]
     exists = [os.path.exists(f"{path_name}/{dir_name}/{out}.pkl") for out in all_outs]
+    # print([f"{path_name}/{dir_name}/{out}.pkl" for out in all_outs])
 
 
     if not np.all(exists):
@@ -148,7 +149,7 @@ for dir_name in tqdm(dirs):
     #     continue
 
     outputs = {}
-    file_name = f"{path_name}/{dir_name}"
+    file_name = f"{path_name}/{dir_name}/"
 
     plot_one_file(file_name, out_file)
 

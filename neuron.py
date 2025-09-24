@@ -22,23 +22,23 @@ CONFIGS = {
         'beta' : 0.01, 
     },
 
-    # '2D': {
-    #     'pb'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.1},
-    #     'pa'  : {"E_L": -65, "R": 10, "v_th": -35, "tau": 1.0}, 
-    #     'pib' : {"E_L": -65, "R": 10, "v_th": -45, "tau": .25}, 
-    #     'pia' : {"E_L": -65, "R": 10, "v_th": -45, "tau": .05},
-    #     'w_ip_a' : 1000, 
-    #     'w_ip_b' : 4000,
-    #     'w_pi_a' : 500,
-    #     'w_pi_b' : 30,
-    #     'ma_pc' : 5000,
-    #     'mb_pc': 2000,
+    # '2D': {.      ###### THIS IS THE ONE WHICH GIVES NICE RESULTS FOR BIOLOGICALLY PLAUSIBLE STDP TAU
+    #     'pb'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.25},
+    #     'pa'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 1}, 
+    #     'pib' : {"E_L": -65, "R": 10, "v_th": -45, "tau": .1}, 
+    #     'pia' : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.1}, 
+    #     'w_ip_a' : 5000, 
+    #     'w_ip_b' : 750,
+    #     'w_pi_a' : 75,
+    #     'w_pi_b' : 100,
+    #     'ma_pc' : 180, 
+    #     'mb_pc': 100,
     #     'alpha' : 0.1, 
-    #     'sigma_pf' : 2,
-    #     'eta' : 50,
-    #     'eta_inh': 0.00001,
-    #     'beta' : 0.1,
-    # }
+    #     'sigma_pf' : 6, 
+    #     'eta' : 1, 
+    #     'eta_inh': 25,
+    #     'beta' : 0.01, 
+    # },
 
 
     '1D': {
@@ -170,11 +170,11 @@ class PyramidalCells():
 
             # --- NEW: Parameters for STDP traces (f_E and f_I) ---
             # Time constant for post-synaptic excitatory trace (pyramidal)
-            self.tau_fE = 20 # s TODO: This was at 20 for the figures in the thesis
+            self.tau_fE = 0.1 # s - Updated to biological range (0.01-0.2 seconds)
             # Amplitude increment for f_E upon a spike
             self.A_fE = 1.0  ## TODO: Delete this variables i guess if they're 1 anyway. In case i decide to change them, also change in report
             # Time constant for pre-synaptic inhibitory trace (interneuron B)
-            self.tau_fI = 20 # s TODO: This was at 20 for the figures in the thesis
+            self.tau_fI = 0.1 # s - Updated to biological range (0.01-0.2 seconds)
             # Amplitude increment for f_I upon a spike
             self.A_fI = 1.0  
             # The constant offset from the formula, causing baseline depression (less inhibition)
@@ -277,7 +277,7 @@ class PyramidalCells():
         self.spike_count = np.zeros((int(round(t_epoch / dt)), self.n_cells['pyramidal']))
         self.burst_count = np.zeros((int(round(t_epoch / dt)), self.n_cells['pyramidal']))
         # self.spike_count_int_a = np.zeros((int(round(t_epoch / dt)), self.n_cells['inter_a']))
-        self.spike_count_int_b = np.zeros((int(round(t_epoch / dt)), self.n_cells['inter_b']))
+        # self.spike_count_int_b = np.zeros((int(round(t_epoch / dt)), self.n_cells['inter_b']))
 
         values = {k: v[1] for k, v in self.dynamics_values.items()}
 
@@ -322,7 +322,7 @@ class PyramidalCells():
 
             self.burst_count[t-1, :] = self.bursting
             self.spike_count[t-1, :] = self.spiking
-            self.spike_count_int_b[t-1, :] = self.inter_spikes_b
+            # self.spike_count_int_b[t-1, :] = self.inter_spikes_b
 
             if self.inh_plasticity:
 
@@ -372,7 +372,7 @@ class PyramidalCells():
 
         full_spike_count = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
         full_burst_count = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
-        self.full_spike_count_int_b = np.zeros((int(round(tn/dt)+1), self.n_cells['inter_b']))
+        # self.full_spike_count_int_b = np.zeros((int(round(tn/dt)+1), self.n_cells['inter_b']))
         # self.full_CA3_activities = np.zeros((int(round(tn/dt)+1), self.n_cells['CA3']))
         # self.full_EC_activities = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
 
@@ -397,7 +397,7 @@ class PyramidalCells():
 
             full_spike_count[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.spike_count
             full_burst_count[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.burst_count
-            self.full_spike_count_int_b[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.spike_count_int_b
+            #self.full_spike_count_int_b[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.spike_count_int_b
             # self.full_CA3_activities[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.I_b.T[:int(t_per_epoch/dt), :]
             # self.full_EC_activities[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.I_a.T[:int(t_per_epoch/dt), :]
 
