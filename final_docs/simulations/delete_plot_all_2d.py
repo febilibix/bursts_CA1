@@ -33,8 +33,7 @@ def plot_one_file(path, out_path):
     act_maps_cont, burst_props_cont = outputs['cont']
 
 
-    act_maps_exp, act_maps_cont = smooth_act_maps(act_maps_exp, act_maps_cont, sigma=1)
-
+    act_maps_exp, act_maps_cont = smooth_act_maps([act_maps_exp, act_maps_cont], sigma=1)
 
     sp_cont_1 = cor_act_maps_2d(act_maps_cont['F2'], act_maps_cont['N1'], which='spatial')
     sp_exp_1 = cor_act_maps_2d(act_maps_exp['F2'], act_maps_exp['N1'], which='spatial')
@@ -44,7 +43,7 @@ def plot_one_file(path, out_path):
         print('Skipping, no data')
         return
     
-    if not (np.nanmedian(sp_cont_1) < 0.05 and np.nanmedian(sp_exp_1) > 0.4 and np.nanmedian(sp_exp_2) > 0.25):
+    if not (np.nanmedian(sp_cont_1) < 0.05 and np.nanmedian(sp_exp_1) > 0.5 and np.nanmedian(sp_exp_2) > 0.45):
         print('bad params, skipping')
         # print('Mdn cont 1: ', np.nanmedian(sp_cont_1), ', ', 'Mdn exp 2: ', np.nanmedian(sp_exp_2))
         return
@@ -115,7 +114,7 @@ def plot_all_conditions(all_act_maps, axs):
     # plt.show()
     # plt.close()
 
-path_name = 'data/2d_test5'
+path_name = 'data/2d_test9'
 
 dirs = os.listdir(path_name)
 
@@ -126,6 +125,8 @@ for dir_name in tqdm(dirs):
     #     continue
 
     out_file = f"{path_name}/plots/{dir_name}/plot_all_conditions.png"
+    if os.path.exists(f"{path_name}/plots/{dir_name}/"):
+        continue
     os.makedirs(os.path.dirname(out_file), exist_ok=True)
 
     all_outs = ['cont_' + i for i in ['F1', 'F2', 'N1', 'F3', 'N2']] + ['exp_' + i for i in ['F1', 'F2', 'N1', 'F3', 'N2']]

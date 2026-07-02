@@ -2,9 +2,8 @@ import numpy as np
 
 
 CONFIGS = {
-    # TODO: I will need to add inh plast parameters here
 
-    '2D': {
+    '2D': {  ###### THIS IS THE ONE WHICH GIVES NICE RESULTS FOR BIOLOGICALLY PLAUSIBLE STDP TAU
         'pb'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.25},
         'pa'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 1}, 
         'pib' : {"E_L": -65, "R": 10, "v_th": -45, "tau": .1}, 
@@ -13,35 +12,17 @@ CONFIGS = {
         'w_ip_b' : 750,
         'w_pi_a' : 75,
         'w_pi_b' : 100,
-        'ma_pc' : 360, # 160, 
-        'mb_pc': 32, # 26,
-        'alpha' : 0.25, # 0.075, 
+        'ma_pc' : 800, 
+        'mb_pc': 30,
+        'alpha' : 0.25, 
         'sigma_pf' : 6, 
-        'eta' : 25, # 25, 
-        'eta_inh': 50, # 15
+        'eta' : 15, 
+        'eta_inh': 150,
         'beta' : 0.01, 
     },
 
-    # '2D': {.      ###### THIS IS THE ONE WHICH GIVES NICE RESULTS FOR BIOLOGICALLY PLAUSIBLE STDP TAU
-    #     'pb'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.25},
-    #     'pa'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 1}, 
-    #     'pib' : {"E_L": -65, "R": 10, "v_th": -45, "tau": .1}, 
-    #     'pia' : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.1}, 
-    #     'w_ip_a' : 5000, 
-    #     'w_ip_b' : 750,
-    #     'w_pi_a' : 75,
-    #     'w_pi_b' : 100,
-    #     'ma_pc' : 180, 
-    #     'mb_pc': 100,
-    #     'alpha' : 0.1, 
-    #     'sigma_pf' : 6, 
-    #     'eta' : 1, 
-    #     'eta_inh': 25,
-    #     'beta' : 0.01, 
-    # },
 
-
-    '1D': {
+    '1D': { ### THIDS IS NOT REALLY TUNED FOR TAU_STDP = 0.1
         'pb'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.25},
         'pa'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 1}, 
         'pib' : {"E_L": -65, "R": 10, "v_th": -45, "tau": .1}, 

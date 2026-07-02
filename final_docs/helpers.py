@@ -419,9 +419,9 @@ def compute_cross_correlogram(act_maps, out1, out2):
     return avg_cross_corr
 
 
-def smooth_act_maps(act_maps_exp, act_maps_cont, sigma):
+def smooth_act_maps(all_act_maps, sigma):
     
-    for act_maps in [act_maps_exp, act_maps_cont]:
+    for act_maps in all_act_maps:
         for key in act_maps.keys():
             # print(act_maps[key].shape)
             reshape_val = int(np.sqrt(act_maps[key].shape[1]))
@@ -429,7 +429,7 @@ def smooth_act_maps(act_maps_exp, act_maps_cont, sigma):
             act_maps[key] = gaussian_filter(act_maps[key], sigma=sigma, mode='wrap')
             act_maps[key] = act_maps[key].reshape(act_maps[key].shape[0], -1)
     
-    return act_maps_exp, act_maps_cont
+    return all_act_maps
 
 
 def extract_active_cells(act_maps_exp, act_maps_cont):
@@ -473,7 +473,7 @@ COLOR_SETTINGS = {
     'exp_no_inh': "#1887d7",         # Original blue
     'exp_no_heb': "#7b1ed2",         # Original purple
 
-    'control_normal': "#448A52",  # Greenish grey
+    'control_normal': "#898989",  #  grey
     'control_no_inh': "#486b8d",    # Greyed-down blue
     'control_no_heb': "#5F4585",    # Greyed-down purple
 }
@@ -604,8 +604,9 @@ def create_plot_one_neuron(ca1, t_values):
     # ax[-1].set_xlabel(r'$t$ (ms)', fontsize=8)
     
     plt.tight_layout()
+    # plt.show()
+    plt.savefig('plots/one_neuron_dynamics.svg', dpi=600, bbox_inches='tight')
     plt.show()
-    # plt.savefig('plots/one_neuron_clean.png', dpi=300, bbox_inches='tight')
 
 
 def plot_2d_activity_map(act, len_edge=50):
@@ -639,8 +640,7 @@ def plot_pv_corr_distributions(groups, out1, out2, ax=None, p=(1,), colors=('gre
         # kde_cont = sns.kdeplot(pv_corr_cont, fill=True, color=color_cont, alpha=0.6, linewidth=1.5, ax=ax)
 
         # Plot medians as dashed lines
-        if p is not None:
-            ax.axvline(np.median(group), color=colors[i], linestyle='--', linewidth=1.5)
+        ax.axvline(np.median(group), color=colors[i], linestyle='--', linewidth=1.5)
         # ax.axvline(np.median(pv_corr_cont), color=color_cont, linestyle='--', linewidth=1.5)
 
     # Labeling
@@ -710,12 +710,35 @@ def create_raincloud_plot(groups, out1, out2, ax, p=(1,), colors=('green', '#808
     sns.boxplot(data=df, x = 'x', hue='Condition', y='Spatial correlation', whis=[0, 100], width=0.8, gap = 0.5, palette=palette, fill = False, ax=ax)
     sns.stripplot(data=df, x= 'x', hue='Condition', y='Spatial correlation', jitter=0.2, palette=palette, alpha=0.1, dodge=True, size=3, ax=ax)
 
+    # Customize axes
+    ax.hlines(0, color='grey', lw=0.5, xmin=-1, xmax=1.5)
+
+    ax.set_title(f'{out1} vs {out2}', fontsize=fs)
+    ax.set_ylabel("Spatial correlation", fontsize=fs)
+    ax.set_xlabel("")
+    ax.set_xticks([])
+    ax.tick_params(labelsize=fs/1.5)
+    if len(groups) == 2 or p is None:
+        ax.set_ylim(-1.1, 1.3)
+    else:
+        ax.set_ylim(-1.1, 1.5)
+    ax.set_xlim(-0.5, 1.5)
+    sns.despine(ax=ax)
+    ax.legend_.remove()
+    # plt.savefig(f'plots/full_experiment/2d_case/final_plots/act_maps_exp_cont_{out1}_{out2}.png', dpi=300)
+    # plt.close()
+
+    if p is None:
+        return
+
     # Add significance bar
     y, h, col = 1.1, 0.05, 'black'
     if len(groups) == 2:
         x1, x2 = 0.8, 1.2
     else:
         x1, x2, x3 = 0.733, 1.0, 1.267
+
+    
 
     ax.plot([x1, x1, x2, x2], [y, y+h, y+h, y], lw=1.5, c=col)
     text1 = '***' if p[0] < 0.001 else '**' if p[0] < .01  else '*' if p[0] < .05 else 'n.s.'
@@ -726,23 +749,7 @@ def create_raincloud_plot(groups, out1, out2, ax, p=(1,), colors=('green', '#808
         ax.plot([x1, x1, x3, x3], [y+.2, y+h+.2, y+h+.2, y+.2], lw=1.5, c=col)
         ax.text((x1 + x3) * 0.5, y + h + 0.22, text2, ha='center', va='bottom', color=col)
 
-    # Customize axes
-    ax.hlines(0, color='grey', lw=0.5, xmin=-1, xmax=1.5)
-
-    ax.set_title(f'{out1} vs {out2}', fontsize=fs)
-    ax.set_ylabel("Spatial correlation", fontsize=fs)
-    ax.set_xlabel("")
-    ax.set_xticks([])
-    ax.tick_params(labelsize=fs/1.5)
-    if len(groups) == 2:
-        ax.set_ylim(-1.1, 1.3)
-    else:
-        ax.set_ylim(-1.1, 1.5)
-    ax.set_xlim(-0.5, 1.5)
-    sns.despine(ax=ax)
-    ax.legend_.remove()
-    # plt.savefig(f'plots/full_experiment/2d_case/final_plots/act_maps_exp_cont_{out1}_{out2}.png', dpi=300)
-    # plt.close()
+  
 
     
 def plot_pv_corr_distributions_old(pv_corr_exp, pv_corr_cont, out1, out2, ax=None, p=1):
@@ -924,7 +931,7 @@ def plot_single_maps(act_maps_exp, act_maps_cont, m_ECs, idx_sorted= None):
 
 def plot_one_2d_map(ax, act_map, out=None):
     act_map = act_map.reshape(int(np.sqrt(act_map.shape[0])), 
-                                int(np.sqrt(act_map.shape[0])))
+                              int(np.sqrt(act_map.shape[0])))
 
     im = ax.imshow(
         gaussian_filter(act_map, sigma=1.5),  # Smooth with Gaussian filter
@@ -946,7 +953,7 @@ def plot_one_2d_map(ax, act_map, out=None):
     return im 
 
 
-def plot_cross_correlogram(act_maps, out1, out2, ax, title=None, cmap='jet', sigma=1.5):
+def plot_cross_correlogram(act_maps, out1, out2, ax, title=None, cmap='jet', sigma=1.5, ylabel=None, vmin=None, vmax=None):
 
     correlogram = compute_cross_correlogram(act_maps, out1, out2)
 
@@ -955,7 +962,16 @@ def plot_cross_correlogram(act_maps, out1, out2, ax, title=None, cmap='jet', sig
 
     # Plot
     # fig, ax = plt.subplots(figsize=(4, 4))
-    im = ax.imshow(smoothed, cmap=cmap, origin='lower', interpolation='bilinear')
+
+    return_val = False
+    if vmin is None and vmax is None:
+        return_val = True
+        vmin, vmax = smoothed.min(), smoothed.max()
+    else:
+        vmin = min(vmin, smoothed.min())
+        vmax = max(vmax, smoothed.max())
+
+    im = ax.imshow(smoothed, cmap=cmap, origin='lower', interpolation='bilinear', vmin=vmin, vmax=vmax)
 
     # Crosshairs at center
     center_y, center_x = np.array(smoothed.shape) // 2
@@ -967,8 +983,38 @@ def plot_cross_correlogram(act_maps, out1, out2, ax, title=None, cmap='jet', sig
 
     if title:
         ax.set_title(title, fontsize=20)
+    
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=20)
+
+    if return_val:
+        return vmin, vmax
+        
 
     # ax.axis('off')
     # plt.tight_layout()
     # plt.savefig(f'plots/full_experiment/2d_case/final_plots/cross_cor_exp_test.png', dpi=300)
 
+
+
+
+def plot_cross_correlogram_new(smoothed, ax, title=None, cmap='jet', ylabel=None, vmin=None, vmax=None):
+
+    # Plot
+    # fig, ax = plt.subplots(figsize=(4, 4))
+
+    im = ax.imshow(smoothed, cmap=cmap, origin='lower', interpolation='bilinear', vmin=vmin, vmax=vmax)
+
+    # Crosshairs at center
+    center_y, center_x = np.array(smoothed.shape) // 2
+    ax.axhline(center_y, color='black', linewidth=2)
+    ax.axvline(center_x, color='black', linewidth=2)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    if title:
+        ax.set_title(title, fontsize=20)
+    
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=20)

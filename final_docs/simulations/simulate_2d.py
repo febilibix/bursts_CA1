@@ -34,8 +34,8 @@ def run_simulation(alpha, a, lr, ma_pc, mb_pc, W_pi_a, W_ip_a,  W_pi_b, W_ip_b, 
                 pickle.dump((t_run, x_run), f)
 
     # out_path = f'data/2d/alpha_{alpha}_a_{a}_lr_{lr}_ma_{ma_pc}_mb_{mb_pc}_W_pi_a_{W_pi_a}_W_ip_a_{W_ip_a}_W_pi_b_{W_pi_b}_W_ip_b_{W_ip_b}_tau_a_{tau_a}_beta_{beta}_inhlr_{inh_lr}_inh_True/'
-    out_path = f'data/2d_test5/alpha_{alpha}_lr_{lr}_mapc_{ma_pc}_mbpc_{mb_pc}_lrinh_{inh_lr}/'
-    # out_path = 'data/2d_test3/'
+    out_path = f'data/2d_test9/alpha_{alpha}_lr_{lr}_mapc_{ma_pc}_mbpc_{mb_pc}_lrinh_{inh_lr}_tauinh_{tau_inh}/'
+    # out_path = 'data/2d/'
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
@@ -47,16 +47,21 @@ def run_simulation(alpha, a, lr, ma_pc, mb_pc, W_pi_a, W_ip_a,  W_pi_b, W_ip_b, 
 
         pyramidal = PyramidalCells(n_cells, len_edge = len_edge, dt = DT, seed = seed, n_dim=2, inh_plasticity=True)
         # 
+        #  pyramidal.eta = 1
+        #  pyramidal.eta_inh = 25
+        #  pyramidal.alpha = .1
+        #  pyramidal.ma_pc = 180
+        #  pyramidal.mb_pc = 100
+
         pyramidal.eta = lr
         pyramidal.eta_inh = inh_lr
         pyramidal.alpha = alpha
         pyramidal.ma_pc = ma_pc
         pyramidal.mb_pc = mb_pc
-
+        
         ## TODO:::::::
-        pyramidal.tau_fE = 0.1 # s - Updated to biological range
-
-        pyramidal.tau_fI = 0.1 # s - Updated to biological range 
+        pyramidal.tau_fE = tau_inh # s - Updated to biological range
+        pyramidal.tau_fI = tau_inh # s - Updated to biological range 
         # pyramidal.W_ip_a = W_ip_a*np.ones((n_cells['inter_a'], n_cells['pyramidal']))/n_cells['pyramidal']
         # pyramidal.W_pi_a = W_pi_a*np.ones((n_cells['pyramidal'], n_cells['inter_a']))/n_cells['inter_a'] # 1000
         # pyramidal.W_ip_b = W_ip_b*np.ones((n_cells['inter_b'], n_cells['pyramidal']))/n_cells['pyramidal']
@@ -77,14 +82,14 @@ def run_simulation(alpha, a, lr, ma_pc, mb_pc, W_pi_a, W_ip_a,  W_pi_b, W_ip_b, 
             if condition == 'cont': params['top_down'] = True           
 
             t_run, x_run = all_runs[out]
-            event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, **params, a = a, t_per_epoch=T_EPOCH) 
+            event_count, burst_count = pyramidal.retrieve_place_cells(t_run, x_run, **params, a = A, t_per_epoch=T_EPOCH) 
 
             fr, x_run_reshaped = get_firing_rates(pyramidal.dt, event_count, x_run, n_bins = 2**15, n_dim=2)
             act_map, _ = get_activation_map_2d(fr, len_edge, x_run_reshaped)
             burst_prop = burst_count.sum(axis = 0)/event_count.sum(axis = 0) # TODO: Will I use this?
 
-            act_map_EC1 = pyramidal.get_input_map(area='EC', env=0, a=a, n_bins = 15)
-            act_map_EC2 = pyramidal.get_input_map(area='EC', env=1, a=a, n_bins = 15)
+            act_map_EC1 = pyramidal.get_input_map(area='EC', env=0, a=A, n_bins = 15)
+            act_map_EC2 = pyramidal.get_input_map(area='EC', env=1, a=A, n_bins = 15)
 
             with open(f'{out_path}{condition}_{out}.pkl', 'wb') as f:
                 pickle.dump((act_map, burst_prop), f)
@@ -172,19 +177,26 @@ def run_single_experiment(params):
 
 if __name__ == '__main__':
     # run_simulation()
+    # quit()
 
-    alphas = [0.1, 0.05, 0.25, 0.7, 1.5, 5] # TODO: I think this one is not tuned yet
-    lrs = [1, 10,15, 25, 50, 75]   
-    ma_pcs = [180, 360, 500, 750] # , 400, 800, 1200]# [5000] 
-    mb_pcs = [64, 100, 128] # , 64, 128, 256, 512]# [2000]
-    inh_lrs = [1, 5, 10, 15, 25, 50, 75] # Scaled by 5x to maintain iSTDP curve area with tau=0.1s
+    # alphas = [0.1, 0.05, 0.25, 0.7, 1.5, 5] # TODO: I think this one is not tuned yet
+    # lrs = [1, 10,15, 25, 50, 75]   
+    # ma_pcs = [180, 360, 500, 750] # , 400, 800, 1200]# [5000] 
+    # mb_pcs = [64, 100, 128] # , 64, 128, 256, 512]# [2000]
+    # inh_lrs = [1, 5, 10, 15, 25, 50, 75] # Scaled by 5x to maintain iSTDP curve area with tau=0.1s
+
+    alphas = [0.1, 0.25, 0.5, 0.75, 1, 5]
+    lrs = [5, 7.5, 10, 15, 20]
+    ma_pcs = [500, 800, 1000, 1500, 2000]
+    mb_pcs = [24, 30, 40, 50, 64]
+    inh_lrs = [50, 75, 100, 150, 200]
     W_ip_a = [1000]
     W_pi_a = [500] 
     W_ip_b = [4000]
     W_pi_b = [30] 
     tau_a = [1.0]
     betas = [0.1] ## TODO: This one could still be tuned.  probably need to tune again, last time i was running with weird normalization
-    tau_inh = [0.1]
+    tau_inh = [0.075, 0.09, 0.1]
     aas = [0.3]
 
     param_combinations = list(product(alphas, aas, lrs, ma_pcs, mb_pcs, W_pi_a, W_ip_a, W_pi_b, W_ip_b, tau_a, inh_lrs, betas, tau_inh))
