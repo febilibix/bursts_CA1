@@ -3,7 +3,7 @@ import numpy as np
 
 CONFIGS = {
 
-    '2D': {  ###### THIS IS THE ONE WHICH GIVES NICE RESULTS FOR BIOLOGICALLY PLAUSIBLE STDP TAU
+    '2D': {  
         'pb'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.25},
         'pa'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 1}, 
         'pib' : {"E_L": -65, "R": 10, "v_th": -45, "tau": .1}, 
@@ -19,26 +19,9 @@ CONFIGS = {
         'eta' : 15, 
         'eta_inh': 150,
         'beta' : 0.01, 
-    },
+        'tau_inh' : 0.1
+    }
 
-
-    '1D': { ### THIDS IS NOT REALLY TUNED FOR TAU_STDP = 0.1
-        'pb'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.25},
-        'pa'  : {"E_L": -65, "R": 10, "v_th": -45, "tau": 1}, 
-        'pib' : {"E_L": -65, "R": 10, "v_th": -45, "tau": .1}, 
-        'pia' : {"E_L": -65, "R": 10, "v_th": -45, "tau": 0.1}, 
-        'w_ip_a' : 5000, 
-        'w_ip_b' : 750,
-        'w_pi_a' : 75,
-        'w_pi_b' : 100,
-        'ma_pc' : 240, # 160, 
-        'mb_pc': 32, # 26,
-        'alpha' : 0.75, # 0.075, 
-        'sigma_pf' : 6, 
-        'eta' : 15, # 25, 
-        'eta_inh': 10, # 15
-        'beta' : 0.01, 
-    },
 }
 
 
@@ -89,7 +72,6 @@ class PyramidalCells():
             self, 
             n_cells,
             len_edge,
-            # learning_rate = 0.05,
             dt = 0.01,
             n_env = 2,
             n_dim = 1,
@@ -102,8 +84,6 @@ class PyramidalCells():
         self.dt = dt
         self.n_dim = n_dim
         self.n_cells = n_cells
-        # self.eta = learning_rate 
-        # self.eta_inh = learning_rate  # Learning rate for inhibitory plasticity
         self.len_edge = len_edge
 
         config = CONFIGS['1D' if n_dim == 1 else '2D']
@@ -149,38 +129,14 @@ class PyramidalCells():
 
         if self.inh_plasticity:
 
-            # --- NEW: Parameters for STDP traces (f_E and f_I) ---
-            # Time constant for post-synaptic excitatory trace (pyramidal)
-            self.tau_fE = 0.1 # s - Updated to biological range (0.01-0.2 seconds)
-            # Amplitude increment for f_E upon a spike
-            self.A_fE = 1.0  ## TODO: Delete this variables i guess if they're 1 anyway. In case i decide to change them, also change in report
-            # Time constant for pre-synaptic inhibitory trace (interneuron B)
-            self.tau_fI = 0.1 # s - Updated to biological range (0.01-0.2 seconds)
-            # Amplitude increment for f_I upon a spike
-            self.A_fI = 1.0  
-            # The constant offset from the formula, causing baseline depression (less inhibition)
             self.constant_depression_term = self.beta 
-
-            # Initialize traces (will be updated at each time step within run_one_epoch)
-            # Trace for post-synaptic excitatory (pyramidal) neurons
+            # Initialize traces 
             self.f_E_trace = np.zeros(n_cells['pyramidal']) 
-            # Trace for pre-synaptic inhibitory (interneuron B) neurons
             self.f_I_trace_b = np.zeros(n_cells['inter_b']) 
 
             # Initialize accumulated delta W for W_ip_b (I->E weights)
-            # This will store the total weight change over an epoch before applying it.
             self.accumulated_delta_W_ip_b = np.zeros(self.W_ip_b.shape)
             self.accumulated_delta_W_pi_b = np.zeros(self.W_pi_b.shape)
-
-            self.W_max_ip_b = 5000/(n_cells['pyramidal'])  # Maximum weight for I->E connections
-            self.W_max_pi_b = 25/(n_cells['inter_b'])  # Maximum weight for I->I connections  
-
-
-
-        ### store updates for batch plasticity ## TODO: DELETE
-        # self.W_CA3_a = np.zeros(self.W_CA3.shape)  # Store updates for CA3 weights
-        # self.W_pi_b_a = np.zeros(self.W_pi_b.shape)  # Store updates for pyramidal to interneuron B weights
-        # self.W_ip_b_a = np.zeros(self.W_ip_b.shape)
 
     
     def generate_place_fields(self, len_edge, n_env, n_dim, rng, area):
@@ -253,12 +209,8 @@ class PyramidalCells():
         self.bursting = np.zeros(self.n_cells['pyramidal'])
         self.spiking = np.zeros(self.n_cells['pyramidal'])
 
-        # TODO: Here i will need to see which ones i will need to save and which ones i don't because of memory
-
         self.spike_count = np.zeros((int(round(t_epoch / dt)), self.n_cells['pyramidal']))
         self.burst_count = np.zeros((int(round(t_epoch / dt)), self.n_cells['pyramidal']))
-        # self.spike_count_int_a = np.zeros((int(round(t_epoch / dt)), self.n_cells['inter_a']))
-        # self.spike_count_int_b = np.zeros((int(round(t_epoch / dt)), self.n_cells['inter_b']))
 
         values = {k: v[1] for k, v in self.dynamics_values.items()}
 
@@ -303,32 +255,17 @@ class PyramidalCells():
 
             self.burst_count[t-1, :] = self.bursting
             self.spike_count[t-1, :] = self.spiking
-            # self.spike_count_int_b[t-1, :] = self.inter_spikes_b
 
             if self.inh_plasticity:
 
-                self.f_E_trace = self.f_E_trace * np.exp(-self.dt / self.tau_fE) + self.A_fE * self.spiking
+                self.f_E_trace = self.f_E_trace * np.exp(-self.dt / self.tau_inh) + self.spiking
+                self.f_I_trace_b = self.f_I_trace_b * np.exp(-self.dt / self.tau_inh) + self.inter_spikes_b
+                term1 = np.outer(self.spiking, self.f_I_trace_b) 
+                term2 = np.outer(self.f_E_trace, self.inter_spikes_b) 
 
-                # Update pre-synaptic inhibitory trace (f_I for interneuron B)
-                # f_I(t+dt) = f_I(t) * exp(-dt / tau_fI) + A_fI * S_I(t)
-                self.f_I_trace_b = self.f_I_trace_b * np.exp(-self.dt / self.tau_fI) + self.A_fI * self.inter_spikes_b
-                term1 = np.outer(self.spiking, self.f_I_trace_b) # Shape (n_pyr, n_int_b)
-
-                # Term 2: f_E^i * V_I^j (Pre-synaptic I spike, modulated by post-synaptic E trace)
-                # f_E^i is self.f_E_trace (n_pyr,)
-                # V_I^j is self.inter_spikes_b (n_int_b,)
-                # So, term2[i,j] = f_E[i] * V_I[j]
-                term2 = np.outer(self.f_E_trace, self.inter_spikes_b) # Shape (n_pyr, n_int_b)
-
-                # Combine terms and apply constant depression
-                # Note: The constant_depression_term is applied per connection, so it's a scalar.
-                # The result `instantaneous_delta_W` has shape (n_pyr, n_int_b)
                 instantaneous_delta_W_ip_b = self.eta_inh * (term2 - term1) 
                 instantaneous_delta_W_pi_b = self.eta_inh * (term1 + term2 - self.constant_depression_term)
 
-
-                # Accumulate the weight change over the epoch (multiply by dt as it's a rate)
-                # We need to transpose `instantaneous_delta_W` to match `self.W_ip_b`'s shape (n_int_b, n_pyr)
                 self.accumulated_delta_W_ip_b += instantaneous_delta_W_ip_b.T * self.dt
                 self.accumulated_delta_W_pi_b += instantaneous_delta_W_pi_b * self.dt
 
@@ -349,13 +286,8 @@ class PyramidalCells():
         
         n_epochs = int(round(tn/t_per_epoch))
 
-        # TODO: Here i will need to see which ones i will need to save and which ones i don't because of memory
-
         full_spike_count = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
         full_burst_count = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
-        # self.full_spike_count_int_b = np.zeros((int(round(tn/dt)+1), self.n_cells['inter_b']))
-        # self.full_CA3_activities = np.zeros((int(round(tn/dt)+1), self.n_cells['CA3']))
-        # self.full_EC_activities = np.zeros((int(round(tn/dt)+1), self.n_cells['pyramidal']))
 
         for j in range(n_epochs):
             t0_epoch = j*t_per_epoch
@@ -378,9 +310,6 @@ class PyramidalCells():
 
             full_spike_count[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.spike_count
             full_burst_count[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.burst_count
-            #self.full_spike_count_int_b[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.spike_count_int_b
-            # self.full_CA3_activities[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.I_b.T[:int(t_per_epoch/dt), :]
-            # self.full_EC_activities[int(t0_epoch/dt):int((t0_epoch + t_per_epoch)/dt), :] = self.I_a.T[:int(t_per_epoch/dt), :]
 
         return full_spike_count, full_burst_count
     
@@ -417,16 +346,9 @@ class PyramidalCells():
         mean_events = np.mean(self.spike_count, axis=0)
         mean_bursts = np.mean(self.burst_count, axis=0)
 
-        # self.burst_count.sum(axis=0).mean()
-        # print('fr exc:', self.spike_count.sum(axis=0).mean(), 'br exc:',  self.burst_count.sum(axis=0).mean(), 'fr inh:', self.spike_count_int_b.sum(axis=0).mean())
-
 
         mean_Ib = np.mean(self.Ib_trace, axis=0)/(self.n_cells['pyramidal'])
-
-        ### OLD: delta_W = self.eta * (np.outer(mean_bursts + self.alpha*(mean_events), mean_Ib))
-
         delta_W = self.eta*np.outer(mean_bursts, mean_Ib) + self.alpha*np.outer(mean_events, mean_Ib)
-        ## then alpha_new = eta*alpha
         self.W_CA3 += delta_W   
         self.W_CA3 = np.where(self.W_CA3 < 0, 0, self.W_CA3)
 
@@ -441,16 +363,10 @@ class PyramidalCells():
 
         if self.inh_plasticity:
 
-            
             self.W_ip_b += self.accumulated_delta_W_ip_b
             self.W_pi_b += self.accumulated_delta_W_pi_b
 
             self.W_ip_b = np.where(self.W_ip_b < 0, 0, self.W_ip_b)
             self.W_pi_b = np.where(self.W_pi_b < 0, 0, self.W_pi_b)
-
-
-            # TODO (?) Optional: Add an upper bound if Wmax is desired, similar to the original text
-            # self.W_ip_b = np.where(self.W_ip_b > self.W_max_ip_b, self.W_max_ip_b, self.W_ip_b) 
-            # self.W_pi_b = np.where(self.W_pi_b > self.W_max_pi_b, self.W_max_pi_b, self.W_pi_b)
 
         self.plast_count += 1
