@@ -1,4 +1,4 @@
-# Code for simulations in "The emergence of a novel CA1 spatial map requires direct entorhinal input" (Chadney et al.) 
+# Code for simulations in "The emergence of a novel CA1 spatial map requires direct entorhinal input" (Chadney et al., https://www.biorxiv.org/content/10.64898/2026.07.02.736055v1) 
 
 ## Overview
 This repository contains all the simulations and plots for the model part of the paper.
